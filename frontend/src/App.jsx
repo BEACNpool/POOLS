@@ -301,9 +301,12 @@ export default function App() {
               }}
             >
               <div style={{ border: '1px solid var(--border)', background: 'var(--panel2)', borderRadius: 18, padding: 18 }}>
-                <div style={{ fontSize: 11, color: 'var(--muted)', textTransform: 'uppercase', letterSpacing: '0.08em' }}>Active pools</div>
+                <div style={{ fontSize: 11, color: 'var(--muted)', textTransform: 'uppercase', letterSpacing: '0.08em' }}>Active pools (delegated)</div>
                 <div style={{ fontSize: 32, fontWeight: 900, marginTop: 8 }}>
-                  <AnimNum value={counts.total} />
+                  <AnimNum value={ns?.active_pools ?? counts.total} />
+                </div>
+                <div style={{ fontSize: 12, color: 'var(--muted)', marginTop: 6 }}>
+                  Pools with &gt; 0 stake this epoch
                 </div>
               </div>
               <div style={{ border: '1px solid var(--border)', background: 'var(--panel2)', borderRadius: 18, padding: 18 }}>

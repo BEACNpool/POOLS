@@ -428,7 +428,8 @@ join pool_relay pr on pr.update_id = l.pool_update_id;
 
     network_summary = {
         'epoch_no': epoch_no,
-        'active_pools': len(pools),
+        'active_pools': int(psql(f"select count(*) from (select pool_id, sum(amount) as amt from epoch_stake where epoch_no = {epoch_no} group by pool_id) s where s.amt > 0;").strip() or '0'),
+        'pools_known': len(pools),
         'total_active_stake_lovelace': total_stake,
         'k_optimal_pool_count': k,
         'min_pool_cost_lovelace': min_pool_cost,
