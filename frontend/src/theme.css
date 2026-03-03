@@ -24,3 +24,42 @@ body {
 }
 
 a { color: var(--link); }
+
+/* Form controls */
+input, select, button { color: var(--text); }
+
+input[type="range"] {
+  width: 100%;
+  accent-color: var(--link);
+}
+
+/* Better contrast for range track/thumb in dark mode */
+input[type="range"]::-webkit-slider-runnable-track {
+  height: 6px;
+  border-radius: 999px;
+  background: var(--panel);
+  border: 1px solid var(--border);
+}
+input[type="range"]::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  appearance: none;
+  margin-top: -6px;
+  width: 18px;
+  height: 18px;
+  border-radius: 999px;
+  background: var(--link);
+  border: 2px solid var(--bg);
+}
+input[type="range"]::-moz-range-track {
+  height: 6px;
+  border-radius: 999px;
+  background: var(--panel);
+  border: 1px solid var(--border);
+}
+input[type="range"]::-moz-range-thumb {
+  width: 18px;
+  height: 18px;
+  border-radius: 999px;
+  background: var(--link);
+  border: 2px solid var(--bg);
+}
