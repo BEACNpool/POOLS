@@ -211,6 +211,7 @@ export default function App() {
   const [hideTooSmall, setHideTooSmall] = useState(false)
   const [maxMargin, setMaxMargin] = useState(5)
   const [minCost, setMinCost] = useState('any')
+  const [feeMode, setFeeMode] = useState('percent') // 'percent' | 'fixed'
 
   useEffect(() => {
     document.documentElement.dataset.theme = theme
@@ -277,20 +278,16 @@ export default function App() {
     setView('intro2')
   }
 
-  function applyFeePreference(pref) {
-    // pref: 'percent' | 'fixed'
-    // Percent: prefer low margin (keep fixed cost any)
-    if (pref === 'percent') {
+  function selectFeeMode(next) {
+    setFeeMode(next)
+    // set sensible defaults but do NOT force; user can adjust controls before continuing
+    if (next === 'percent') {
       setMaxMargin(1)
       setMinCost('any')
-    }
-    // Fixed: prefer minimum fixed fee (170) (keep margin moderate)
-    if (pref === 'fixed') {
+    } else {
       setMinCost('170')
       setMaxMargin(5)
     }
-
-    setView('results')
   }
 
   return (
@@ -446,7 +443,7 @@ export default function App() {
           <section style={{ marginTop: 14, border: '1px solid var(--border)', background: 'var(--panel2)', borderRadius: 18, padding: 18 }}>
             <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap', alignItems: 'center', justifyContent: 'space-between' }}>
               <div>
-                <div style={{ fontSize: 20, fontWeight: 950, letterSpacing: '-0.02em' }}>Step 2 — Choose a fee preference</div>
+                <div style={{ fontSize: 20, fontWeight: 950, letterSpacing: '-0.02em' }}>Step 2 — Fees: pick what you want to optimize</div>
                 <div style={{ marginTop: 8, color: 'var(--muted)', lineHeight: 1.55 }}>
                   Goal: <b style={{ color: 'var(--text)' }}>{goal === 'decentralize' ? 'Help decentralization' : 'Max rewards'}</b>
                 </div>
@@ -461,32 +458,75 @@ export default function App() {
 
             <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, minmax(0, 1fr))', gap: 12, marginTop: 16 }}>
               <button
-                onClick={() => applyFeePreference('percent')}
-                style={{ textAlign: 'left', border: '1px solid var(--border)', background: 'var(--panel)', color: 'var(--text)', borderRadius: 18, padding: 16, cursor: 'pointer' }}
+                onClick={() => selectFeeMode('percent')}
+                style={{
+                  textAlign: 'left',
+                  border: '1px solid var(--border)',
+                  background: feeMode === 'percent' ? 'rgba(83,82,237,0.14)' : 'var(--panel)',
+                  color: 'var(--text)',
+                  borderRadius: 18,
+                  padding: 16,
+                  cursor: 'pointer'
+                }}
               >
-                <div style={{ fontWeight: 950, fontSize: 16 }}>% margin (low)</div>
+                <div style={{ fontWeight: 950, fontSize: 16 }}>% margin</div>
                 <div style={{ marginTop: 8, color: 'var(--muted)', lineHeight: 1.5 }}>
-                  Starts with <b>max margin = 1%</b>.
+                  Filter pools by max % margin.
                 </div>
               </button>
 
               <button
-                onClick={() => applyFeePreference('fixed')}
-                style={{ textAlign: 'left', border: '1px solid var(--border)', background: 'var(--panel)', color: 'var(--text)', borderRadius: 18, padding: 16, cursor: 'pointer' }}
+                onClick={() => selectFeeMode('fixed')}
+                style={{
+                  textAlign: 'left',
+                  border: '1px solid var(--border)',
+                  background: feeMode === 'fixed' ? 'rgba(83,82,237,0.14)' : 'var(--panel)',
+                  color: 'var(--text)',
+                  borderRadius: 18,
+                  padding: 16,
+                  cursor: 'pointer'
+                }}
               >
-                <div style={{ fontWeight: 950, fontSize: 16 }}>Fixed fee (min)</div>
+                <div style={{ fontWeight: 950, fontSize: 16 }}>Fixed fee</div>
                 <div style={{ marginTop: 8, color: 'var(--muted)', lineHeight: 1.5 }}>
-                  Starts with <b>fixed fee = 170 ₳</b>.
+                  Filter pools by fixed fee (170/340).
                 </div>
               </button>
             </div>
 
-            <div style={{ marginTop: 14, display: 'flex', justifyContent: 'flex-end' }}>
+            <div style={{ marginTop: 14, borderTop: '1px solid var(--border)', paddingTop: 14 }}>
+              {feeMode === 'percent' ? (
+                <>
+                  <div style={{ color: 'var(--muted)', fontSize: 12, marginBottom: 8 }}>
+                    Max % margin: <b style={{ color: 'var(--text)' }}>{maxMargin}%</b>
+                  </div>
+                  <input type="range" min={0} max={10} step={0.5} value={maxMargin} onChange={e => setMaxMargin(Number(e.target.value))} style={{ width: '100%' }} />
+                </>
+              ) : (
+                <>
+                  <div style={{ color: 'var(--muted)', fontSize: 12, marginBottom: 8 }}>Fixed fee</div>
+                  <select value={minCost} onChange={e => setMinCost(e.target.value)} style={{ width: '100%', padding: '10px 10px', borderRadius: 12, border: '1px solid var(--border)', background: 'var(--panel)', color: 'var(--text)' }}>
+                    <option value="any">Any</option>
+                    <option value="170">170 ₳</option>
+                    <option value="340">340 ₳</option>
+                  </select>
+                </>
+              )}
+            </div>
+
+            <div style={{ marginTop: 14, display: 'flex', justifyContent: 'space-between', gap: 10, flexWrap: 'wrap', alignItems: 'center' }}>
               <button
                 onClick={() => setView('results')}
                 style={{ border: 'none', background: 'transparent', color: 'var(--link)', cursor: 'pointer', padding: 0, fontSize: 12 }}
               >
                 Skip → browse all pools
+              </button>
+
+              <button
+                onClick={() => setView('results')}
+                style={{ border: '1px solid var(--border)', background: 'var(--panel)', color: 'var(--text)', borderRadius: 12, padding: '10px 14px', cursor: 'pointer', fontWeight: 800 }}
+              >
+                Show recommended pools →
               </button>
             </div>
           </section>
@@ -498,9 +538,11 @@ export default function App() {
             <section style={{ marginTop: 12, display: 'flex', gap: 10, alignItems: 'stretch', flexWrap: 'wrap' }}>
               <button
                 onClick={() => {
-                  setView('intro')
+                  setView('intro1')
                   setShowFilters(false)
+                  setShowHow(false)
                   setSelected(null)
+                  setQ('')
                 }}
                 style={{
                   padding: '10px 14px',
