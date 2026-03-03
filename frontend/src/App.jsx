@@ -109,6 +109,7 @@ export default function App() {
                   <tr style={{ textAlign: 'left', borderBottom: '1px solid rgba(255,255,255,0.15)' }}>
                     <th style={{ padding: '10px 8px' }}>Ticker</th>
                     <th style={{ padding: '10px 8px' }}>Name</th>
+                    <th style={{ padding: '10px 8px' }}>Website</th>
                     <th style={{ padding: '10px 8px' }}>Active stake</th>
                     <th style={{ padding: '10px 8px' }}>MPO</th>
                     <th style={{ padding: '10px 8px' }}>Evidence</th>
@@ -119,6 +120,15 @@ export default function App() {
                     <tr key={p.pool_id_bech32} style={{ borderBottom: '1px solid rgba(255,255,255,0.08)' }}>
                       <td style={{ padding: '10px 8px', fontWeight: 700 }}>{p.ticker || '—'}</td>
                       <td style={{ padding: '10px 8px' }}>{p.name || '—'}</td>
+                      <td style={{ padding: '10px 8px' }}>
+                        {p.homepage ? (
+                          <a href={p.homepage} target="_blank" rel="noreferrer" style={{ color: 'white' }}>
+                            {p.homepage.replace(/^https?:\/\//, '')}
+                          </a>
+                        ) : (
+                          <span style={{ opacity: 0.7 }}>—</span>
+                        )}
+                      </td>
                       <td style={{ padding: '10px 8px' }}>{formatAda(p.active_stake_lovelace)}</td>
                       <td style={{ padding: '10px 8px' }}>
                         {p.mpo ? <Badge>Yes</Badge> : <span style={{ opacity: 0.75 }}>No</span>}

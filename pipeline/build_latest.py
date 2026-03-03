@@ -148,6 +148,8 @@ select
   ph.view as pool_id_bech32,
   coalesce(opd.ticker_name, '') as ticker,
   coalesce(opd.json->>'name', '') as name,
+  coalesce(opd.json->>'homepage', '') as homepage,
+  coalesce(opd.json->>'description', '') as description,
   coalesce(es.amount, 0) as active_stake_lovelace,
   l.pledge,
   l.margin,
@@ -173,7 +175,7 @@ left join pool_metadata_ref pmr on pmr.id = l.meta_id
     pool_by_hash: Dict[int, dict] = {}
 
     for cols in pool_rows:
-        if len(cols) < 12:
+        if len(cols) < 14:
             continue
         pool_hash_id = int(cols[0])
         pool_id_bech32 = cols[1]
@@ -182,14 +184,16 @@ left join pool_metadata_ref pmr on pmr.id = l.meta_id
             'pool_id_bech32': pool_id_bech32,
             'ticker': cols[2] or None,
             'name': cols[3] or None,
-            'active_stake_lovelace': int(cols[4] or '0'),
-            'pledge_lovelace': int(cols[5] or '0'),
-            'margin': float(cols[6] or '0'),
-            'fixed_cost_lovelace': int(cols[7] or '0'),
-            'reward_addr_id': int(cols[8] or '0'),
-            'pool_update_id': int(cols[9] or '0'),
-            'metadata_url': cols[10] or None,
-            'metadata_hash_hex': cols[11] or None,
+            'homepage': cols[4] or None,
+            'description': cols[5] or None,
+            'active_stake_lovelace': int(cols[6] or '0'),
+            'pledge_lovelace': int(cols[7] or '0'),
+            'margin': float(cols[8] or '0'),
+            'fixed_cost_lovelace': int(cols[9] or '0'),
+            'reward_addr_id': int(cols[10] or '0'),
+            'pool_update_id': int(cols[11] or '0'),
+            'metadata_url': cols[12] or None,
+            'metadata_hash_hex': cols[13] or None,
             'mpo': None,
         }
         pools.append(pool)
@@ -429,6 +433,8 @@ join pool_relay pr on pr.update_id = l.pool_update_id;
                 'fixed_cost_lovelace': p.get('fixed_cost_lovelace', 0),
                 'metadata_url': p.get('metadata_url'),
                 'metadata_hash_hex': p.get('metadata_hash_hex'),
+                'homepage': p.get('homepage'),
+                'description': p.get('description'),
                 'mpo': p.get('mpo'),
             } for p in sorted(pools, key=lambda x: x.get('active_stake_lovelace', 0), reverse=True)
         ]
