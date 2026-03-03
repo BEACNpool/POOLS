@@ -279,15 +279,9 @@ export default function App() {
   }
 
   function selectFeeMode(next) {
+    // Only affects which option is highlighted / explained.
+    // Do NOT overwrite the user’s existing slider/dropdown selections.
     setFeeMode(next)
-    // set sensible defaults but do NOT force; user can adjust controls before continuing
-    if (next === 'percent') {
-      setMaxMargin(1)
-      setMinCost('any')
-    } else {
-      setMinCost('170')
-      setMaxMargin(5)
-    }
   }
 
   return (
@@ -495,23 +489,25 @@ export default function App() {
             </div>
 
             <div style={{ marginTop: 14, borderTop: '1px solid var(--border)', paddingTop: 14 }}>
-              {feeMode === 'percent' ? (
-                <>
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
+                <div>
                   <div style={{ color: 'var(--muted)', fontSize: 12, marginBottom: 8 }}>
                     Max % margin: <b style={{ color: 'var(--text)' }}>{maxMargin}%</b>
                   </div>
                   <input type="range" min={0} max={10} step={0.5} value={maxMargin} onChange={e => setMaxMargin(Number(e.target.value))} style={{ width: '100%' }} />
-                </>
-              ) : (
-                <>
+                </div>
+                <div>
                   <div style={{ color: 'var(--muted)', fontSize: 12, marginBottom: 8 }}>Fixed fee</div>
                   <select value={minCost} onChange={e => setMinCost(e.target.value)} style={{ width: '100%', padding: '10px 10px', borderRadius: 12, border: '1px solid var(--border)', background: 'var(--panel)', color: 'var(--text)' }}>
                     <option value="any">Any</option>
                     <option value="170">170 ₳</option>
                     <option value="340">340 ₳</option>
                   </select>
-                </>
-              )}
+                </div>
+              </div>
+              <div style={{ marginTop: 10, color: 'var(--muted)', fontSize: 12, lineHeight: 1.5 }}>
+                Both filters apply together. Use the buttons above to choose what you’re focusing on; your selections won’t reset.
+              </div>
             </div>
 
             <div style={{ marginTop: 14, display: 'flex', justifyContent: 'space-between', gap: 10, flexWrap: 'wrap', alignItems: 'center' }}>
