@@ -270,7 +270,8 @@ export default function App() {
     setGoal(nextGoal)
     // Reset to neutral before the fee-step applies a specific preference
     setHideNearSat(true)
-    setHideTooSmall(true)
+    // Don't hide small/understaked pools by default; just flag them.
+    setHideTooSmall(false)
     // Goal effects
     if (nextGoal === 'decentralize') setHideMpo(true)
     else setHideMpo(false)
