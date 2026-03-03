@@ -30,7 +30,9 @@ export default function App() {
   const [q, setQ] = useState('')
 
   useEffect(() => {
-    fetch('/data/latest.json', { cache: 'no-store' })
+    // On GitHub Pages this site is served under /POOLS/
+    const base = import.meta.env.BASE_URL || '/'
+    fetch(`${base}data/latest.json`, { cache: 'no-store' })
       .then(r => {
         if (!r.ok) throw new Error(`HTTP ${r.status}`)
         return r.json()
