@@ -59,7 +59,7 @@ function AnimNum({ value, suffix = '' }) {
   const raf = useRef(null)
   useEffect(() => {
     let start = null
-    const from = display
+    const from = 0
     const to = Number(value) || 0
     const dur = 900
     const step = ts => {
@@ -71,7 +71,6 @@ function AnimNum({ value, suffix = '' }) {
     }
     raf.current = requestAnimationFrame(step)
     return () => raf.current && cancelAnimationFrame(raf.current)
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [value])
   return (
     <>
@@ -106,17 +105,57 @@ function externalLinks(poolId) {
   }
 }
 
+function Modal({ open, title, onClose, children }) {
+  if (!open) return null
+  return (
+    <div
+      role="dialog"
+      aria-modal="true"
+      onMouseDown={e => {
+        if (e.target === e.currentTarget) onClose()
+      }}
+      style={{
+        position: 'fixed',
+        inset: 0,
+        background: 'rgba(0,0,0,0.55)',
+        zIndex: 50,
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'center',
+        padding: 18
+      }}
+    >
+      <div style={{ maxWidth: 860, width: '100%', borderRadius: 18, border: '1px solid var(--border)', background: 'var(--bg)', boxShadow: '0 20px 60px rgba(0,0,0,0.5)' }}>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 12, padding: 14, borderBottom: '1px solid var(--border)' }}>
+          <div style={{ fontWeight: 900 }}>{title}</div>
+          <button
+            onClick={onClose}
+            style={{ padding: '6px 10px', borderRadius: 12, border: '1px solid var(--border)', background: 'var(--panel)', color: 'var(--text)', cursor: 'pointer' }}
+          >
+            Close
+          </button>
+        </div>
+        <div style={{ padding: 14, color: 'var(--muted)', lineHeight: 1.6 }}>{children}</div>
+      </div>
+    </div>
+  )
+}
+
 export default function App() {
   const [data, setData] = useState(null)
   const [err, setErr] = useState(null)
 
+  // UX flow
+  const [view, setView] = useState('intro') // intro | results
+  const [howOpen, setHowOpen] = useState(false)
+
   // UI state
   const [theme, setTheme] = useState(() => localStorage.getItem('theme') || 'dark')
   const [q, setQ] = useState('')
-  const [showFilters, setShowFilters] = useState(false)
   const [selected, setSelected] = useState(null)
+  const [filtersOpen, setFiltersOpen] = useState(false)
 
-  // filters (warnings are flags, not exclusions; user can choose)
+  // filters (warnings are flags, not exclusions)
   const [hideMpo, setHideMpo] = useState(false)
   const [hideNearSat, setHideNearSat] = useState(false)
   const [hideTooSmall, setHideTooSmall] = useState(false)
@@ -160,7 +199,7 @@ export default function App() {
         if (!s) return true
         return [p.ticker, p.name, p.pool_id_bech32].some(v => (v || '').toLowerCase().includes(s))
       })
-      .slice(0, 1200) // guardrail for browser perf
+      .slice(0, 1200)
   }, [pools, q, hideMpo, hideNearSat, hideTooSmall, maxMargin, minCost])
 
   const counts = useMemo(() => {
@@ -175,6 +214,33 @@ export default function App() {
     }
     return { total, mpo, sat, small }
   }, [pools])
+
+  function applyPreset(preset) {
+    // We still allow users to override; this just sets sane defaults.
+    if (preset === 'max') {
+      setHideMpo(false)
+      setHideNearSat(false)
+      setHideTooSmall(true)
+      setMaxMargin(5)
+      setMinCost('any')
+    } else if (preset === 'balanced') {
+      setHideMpo(false)
+      setHideNearSat(true)
+      setHideTooSmall(true)
+      setMaxMargin(3)
+      setMinCost('any')
+    } else if (preset === 'decentralize') {
+      setHideMpo(true)
+      setHideNearSat(true)
+      setHideTooSmall(false)
+      setMaxMargin(5)
+      setMinCost('any')
+    }
+    setFiltersOpen(false)
+    setSelected(null)
+    setQ('')
+    setView('results')
+  }
 
   return (
     <div
@@ -256,10 +322,8 @@ export default function App() {
               P
             </div>
             <div>
-              <div style={{ fontSize: 18, fontWeight: 800, letterSpacing: '-0.02em' }}>POOLS — How to find an SPO</div>
-              <div style={{ fontSize: 12, color: 'var(--muted)' }}>
-                Community-built. Uses db-sync + metadata. MPO detection is best-effort with evidence.
-              </div>
+              <div style={{ fontSize: 18, fontWeight: 900, letterSpacing: '-0.02em' }}>POOLS — Find a Cardano SPO</div>
+              <div style={{ fontSize: 12, color: 'var(--muted)' }}>Fast filters + clear warnings. No bullshit.</div>
             </div>
           </div>
 
@@ -281,6 +345,20 @@ export default function App() {
           </div>
         </header>
 
+        <Modal open={howOpen} title="How it works" onClose={() => setHowOpen(false)}>
+          <p style={{ marginTop: 0 }}>
+            Cardano uses an “optimal pool count” parameter <b>k</b>. Roughly, <b>network stake / k</b> gives a <b>saturation cap</b>. Above that cap, rewards
+            <b> taper</b>.
+          </p>
+          <p>
+            A rough variance rule-of-thumb: around <b>{formatAda(ns?.stake_for_1_block_expected_lovelace)}</b> active stake is about
+            <b> ~1 block expected per epoch</b>. Smaller pools can still earn rewards, but results can be spiky.
+          </p>
+          <p style={{ marginBottom: 0 }}>
+            MPO flags are best-effort inference with evidence. We show warnings, not certainty.
+          </p>
+        </Modal>
+
         {err && (
           <div style={{ marginTop: 16, padding: 12, border: '1px solid rgba(255,80,80,0.5)', borderRadius: 12 }}>
             Couldn’t load snapshot: {err}
@@ -289,69 +367,98 @@ export default function App() {
 
         {!data && !err && <div style={{ marginTop: 16, opacity: 0.85 }}>Loading latest snapshot…</div>}
 
-        {data && (
+        {data && view === 'intro' && (
           <>
-            {/* HERO STATS */}
-            <section
-              style={{
-                display: 'grid',
-                gridTemplateColumns: 'repeat(4, minmax(0, 1fr))',
-                gap: 14,
-                marginTop: 18
-              }}
-            >
-              <div style={{ border: '1px solid var(--border)', background: 'var(--panel2)', borderRadius: 18, padding: 18 }}>
-                <div style={{ fontSize: 11, color: 'var(--muted)', textTransform: 'uppercase', letterSpacing: '0.08em' }}>Active pools (delegated)</div>
-                <div style={{ fontSize: 32, fontWeight: 900, marginTop: 8 }}>
-                  <AnimNum value={ns?.active_pools ?? counts.total} />
-                </div>
-                <div style={{ fontSize: 12, color: 'var(--muted)', marginTop: 6 }}>
-                  Pools with &gt; 0 stake this epoch
-                </div>
-              </div>
-              <div style={{ border: '1px solid var(--border)', background: 'var(--panel2)', borderRadius: 18, padding: 18 }}>
-                <div style={{ fontSize: 11, color: 'var(--muted)', textTransform: 'uppercase', letterSpacing: '0.08em' }}>Saturation cap</div>
-                <div style={{ fontSize: 22, fontWeight: 900, marginTop: 10 }}>{formatAdaShort(ns?.saturation_cap_lovelace)}</div>
-                <div style={{ fontSize: 12, color: 'var(--muted)', marginTop: 6 }}>≈ network stake ÷ k</div>
-              </div>
-              <div style={{ border: '1px solid var(--border)', background: 'var(--panel2)', borderRadius: 18, padding: 18 }}>
-                <div style={{ fontSize: 11, color: 'var(--muted)', textTransform: 'uppercase', letterSpacing: '0.08em' }}>~1 block expected / epoch</div>
-                <div style={{ fontSize: 22, fontWeight: 900, marginTop: 10 }}>{formatAdaShort(ns?.stake_for_1_block_expected_lovelace)}</div>
-                <div style={{ fontSize: 12, color: 'var(--muted)', marginTop: 6 }}>Rule-of-thumb variance cutoff</div>
-              </div>
-              <div style={{ border: '1px solid var(--border)', background: 'var(--panel2)', borderRadius: 18, padding: 18 }}>
-                <div style={{ fontSize: 11, color: 'var(--muted)', textTransform: 'uppercase', letterSpacing: '0.08em' }}>MPO concentration</div>
-                <div style={{ fontSize: 32, fontWeight: 900, marginTop: 8 }}>
-                  <AnimNum value={Math.round(ns?.mpo_stake_pct ?? 0)} suffix="%" />
-                </div>
-                <div style={{ fontSize: 12, color: 'var(--muted)', marginTop: 6 }}>Flagged MPO stake share (best-effort)</div>
-              </div>
-            </section>
-
-            {/* EDUCATION */}
-            <section style={{ marginTop: 16, padding: 16, borderRadius: 18, border: '1px solid var(--border)', background: 'var(--panel2)' }}>
-              <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', alignItems: 'center', marginBottom: 10 }}>
-                <Badge tone="info">k={ns?.k_optimal_pool_count ?? '—'}</Badge>
-                <Badge tone="neutral">Saturation ≈ {formatAda(ns?.saturation_cap_lovelace)}</Badge>
-                <Badge tone="neutral">Blocks/epoch ≈ {ns?.blocks_per_epoch ?? '—'}</Badge>
-              </div>
-              <h2 style={{ margin: 0, fontSize: 16 }}>How rewards + saturation work (delegator version)</h2>
-              <p style={{ marginTop: 10, marginBottom: 8, color: 'var(--muted)', lineHeight: 1.55 }}>
-                Cardano’s <b>k</b> (optimal pool count) sets a target decentralization level. Roughly, <b>network stake / k</b> is the <b>saturation cap</b>.
-                Above that cap, rewards <b>taper</b>.
-              </p>
-              <p style={{ marginTop: 0, marginBottom: 0, color: 'var(--muted)', lineHeight: 1.55 }}>
-                “Too small” pools can still produce rewards, but if they’re below about <b>{formatAda(ns?.stake_for_1_block_expected_lovelace)}</b> active stake,
-                they may have <b>&lt; 1 block expected per epoch</b> and variance gets ugly.
+            <section style={{ marginTop: 20, padding: 18, borderRadius: 18, border: '1px solid var(--border)', background: 'var(--panel2)' }}>
+              <h1 style={{ margin: 0, fontSize: 22, letterSpacing: '-0.02em' }}>Pick what matters to you.</h1>
+              <p style={{ marginTop: 10, marginBottom: 0, color: 'var(--muted)', lineHeight: 1.6 }}>
+                This is a community tool to help delegators choose pools with eyes open: saturation, fees, variance, and concentration risk.
               </p>
             </section>
 
-            {/* Search + toolbar */}
+            <section style={{ marginTop: 14, display: 'grid', gridTemplateColumns: 'repeat(3, minmax(0, 1fr))', gap: 14 }}>
+              <button
+                onClick={() => applyPreset('max')}
+                style={{ padding: 16, borderRadius: 18, border: '1px solid var(--border)', background: 'var(--panel)', color: 'var(--text)', cursor: 'pointer', textAlign: 'left' }}
+              >
+                <div style={{ fontWeight: 900, fontSize: 16 }}>Max rewards</div>
+                <div style={{ marginTop: 8, color: 'var(--muted)', lineHeight: 1.5 }}>
+                  Prioritizes avoiding tiny pools. Warnings still shown.
+                </div>
+                <div style={{ marginTop: 10 }}>
+                  <Badge tone="bad">Can worsen concentration (MPOs)</Badge>
+                </div>
+              </button>
+
+              <button
+                onClick={() => applyPreset('balanced')}
+                style={{ padding: 16, borderRadius: 18, border: '1px solid var(--border)', background: 'var(--panel)', color: 'var(--text)', cursor: 'pointer', textAlign: 'left' }}
+              >
+                <div style={{ fontWeight: 900, fontSize: 16 }}>Balanced</div>
+                <div style={{ marginTop: 8, color: 'var(--muted)', lineHeight: 1.5 }}>
+                  Hides near-saturated pools and tiny variance traps.
+                </div>
+                <div style={{ marginTop: 10 }}>
+                  <Badge tone="neutral">Good default</Badge>
+                </div>
+              </button>
+
+              <button
+                onClick={() => applyPreset('decentralize')}
+                style={{ padding: 16, borderRadius: 18, border: '1px solid var(--border)', background: 'var(--panel)', color: 'var(--text)', cursor: 'pointer', textAlign: 'left' }}
+              >
+                <div style={{ fontWeight: 900, fontSize: 16 }}>Help decentralization</div>
+                <div style={{ marginTop: 8, color: 'var(--muted)', lineHeight: 1.5 }}>
+                  Hides MPO pools by default. (You can toggle later.)
+                </div>
+                <div style={{ marginTop: 10 }}>
+                  <Badge tone="good">Recommended</Badge>
+                </div>
+              </button>
+            </section>
+
+            <section style={{ marginTop: 14, display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: 12 }}>
+              <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap' }}>
+                <Badge tone="info">Active pools (delegated): {ns?.active_pools?.toLocaleString?.() ?? '—'}</Badge>
+                <Badge tone="neutral">Pools known: {ns?.pools_known?.toLocaleString?.() ?? counts.total.toLocaleString()}</Badge>
+                <Badge tone="neutral">Saturation cap: {formatAdaShort(ns?.saturation_cap_lovelace)}</Badge>
+              </div>
+              <div style={{ display: 'flex', gap: 12, alignItems: 'center' }}>
+                <button
+                  onClick={() => setHowOpen(true)}
+                  style={{ border: 'none', background: 'transparent', color: 'var(--link)', cursor: 'pointer' }}
+                >
+                  How it works
+                </button>
+                <button
+                  onClick={() => setView('results')}
+                  style={{ border: 'none', background: 'transparent', color: 'var(--muted)', cursor: 'pointer' }}
+                >
+                  Skip → browse all pools
+                </button>
+              </div>
+            </section>
+          </>
+        )}
+
+        {data && view === 'results' && (
+          <>
+            {/* Top bar */}
             <section style={{ marginTop: 18, display: 'flex', gap: 10, alignItems: 'stretch', flexWrap: 'wrap' }}>
+              <button
+                onClick={() => {
+                  setView('intro')
+                  setFiltersOpen(false)
+                }}
+                style={{ padding: '10px 14px', borderRadius: 14, border: '1px solid var(--border)', background: 'var(--panel)', color: 'var(--text)', cursor: 'pointer' }}
+              >
+                ← Back
+              </button>
+
               <div
                 style={{
                   flex: 1,
-                  minWidth: 320,
+                  minWidth: 260,
                   display: 'flex',
                   alignItems: 'center',
                   gap: 10,
@@ -369,22 +476,19 @@ export default function App() {
                   style={{ flex: 1, border: 'none', outline: 'none', background: 'transparent', color: 'var(--text)' }}
                 />
                 {q && (
-                  <button
-                    onClick={() => setQ('')}
-                    style={{ border: 'none', background: 'transparent', color: 'var(--muted)', cursor: 'pointer' }}
-                  >
+                  <button onClick={() => setQ('')} style={{ border: 'none', background: 'transparent', color: 'var(--muted)', cursor: 'pointer' }}>
                     ✕
                   </button>
                 )}
               </div>
 
               <button
-                onClick={() => setShowFilters(s => !s)}
+                onClick={() => setFiltersOpen(o => !o)}
                 style={{
                   padding: '10px 14px',
                   borderRadius: 14,
                   border: '1px solid var(--border)',
-                  background: showFilters ? 'rgba(83,82,237,0.14)' : 'var(--panel)',
+                  background: filtersOpen ? 'rgba(83,82,237,0.14)' : 'var(--panel)',
                   color: 'var(--text)',
                   cursor: 'pointer'
                 }}
@@ -395,22 +499,21 @@ export default function App() {
                 </span>
               </button>
 
-              <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                <Badge tone="neutral">Showing {filtered.length.toLocaleString()} pools</Badge>
+              <button
+                onClick={() => setHowOpen(true)}
+                style={{ padding: '10px 14px', borderRadius: 14, border: '1px solid var(--border)', background: 'var(--panel)', color: 'var(--text)', cursor: 'pointer' }}
+              >
+                ? How
+              </button>
+
+              <div style={{ display: 'flex', alignItems: 'center' }}>
+                <Badge tone="neutral">Showing {filtered.length.toLocaleString()}</Badge>
               </div>
             </section>
 
-            {/* Filter panel */}
-            {showFilters && (
-              <section
-                style={{
-                  marginTop: 12,
-                  padding: 14,
-                  borderRadius: 18,
-                  border: '1px solid var(--border)',
-                  background: 'var(--panel2)'
-                }}
-              >
+            {/* Slide-over filters */}
+            {filtersOpen && (
+              <section style={{ marginTop: 12, padding: 14, borderRadius: 18, border: '1px solid var(--border)', background: 'var(--panel2)' }}>
                 <div style={{ display: 'flex', gap: 18, flexWrap: 'wrap', alignItems: 'center' }}>
                   <label style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
                     <input type="checkbox" checked={hideMpo} onChange={e => setHideMpo(e.target.checked)} />
@@ -436,6 +539,19 @@ export default function App() {
                       <option value="340">340 ₳</option>
                     </select>
                   </label>
+
+                  <button
+                    onClick={() => {
+                      setHideMpo(false)
+                      setHideNearSat(false)
+                      setHideTooSmall(false)
+                      setMaxMargin(5)
+                      setMinCost('any')
+                    }}
+                    style={{ marginLeft: 'auto', padding: '8px 12px', borderRadius: 14, border: '1px solid var(--border)', background: 'var(--panel)', color: 'var(--text)', cursor: 'pointer' }}
+                  >
+                    Reset
+                  </button>
                 </div>
 
                 <div style={{ marginTop: 12, display: 'flex', gap: 10, flexWrap: 'wrap' }}>
@@ -523,9 +639,7 @@ export default function App() {
                       <div style={{ fontWeight: 650 }}>{formatAdaShort(p.active_stake_lovelace)}</div>
 
                       <div>
-                        <Badge tone={Number(marginPct) <= 1 ? 'good' : Number(marginPct) <= 3 ? 'neutral' : 'warn'}>
-                          {marginPct}%
-                        </Badge>
+                        <Badge tone={Number(marginPct) <= 1 ? 'good' : Number(marginPct) <= 3 ? 'neutral' : 'warn'}>{marginPct}%</Badge>
                       </div>
 
                       <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
@@ -543,9 +657,7 @@ export default function App() {
                       <div style={{ padding: '14px 16px', borderBottom: '1px solid rgba(255,255,255,0.06)', background: 'rgba(255,255,255,0.02)' }}>
                         <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 12 }}>
                           <div style={{ border: '1px solid var(--border)', borderRadius: 14, padding: 12, background: 'var(--panel2)' }}>
-                            <div style={{ fontSize: 11, color: 'var(--muted)', textTransform: 'uppercase', letterSpacing: '0.08em', marginBottom: 10 }}>
-                              Pool details
-                            </div>
+                            <div style={{ fontSize: 11, color: 'var(--muted)', textTransform: 'uppercase', letterSpacing: '0.08em', marginBottom: 10 }}>Pool details</div>
                             <div style={{ display: 'flex', justifyContent: 'space-between', padding: '6px 0' }}>
                               <span style={{ color: 'var(--muted)' }}>Pledge</span>
                               <span>{formatAda(p.pledge_lovelace)}</span>
@@ -561,41 +673,38 @@ export default function App() {
                           </div>
 
                           <div style={{ border: '1px solid var(--border)', borderRadius: 14, padding: 12, background: 'var(--panel2)' }}>
-                            <div style={{ fontSize: 11, color: 'var(--muted)', textTransform: 'uppercase', letterSpacing: '0.08em', marginBottom: 10 }}>
-                              Delegation impact
-                            </div>
+                            <div style={{ fontSize: 11, color: 'var(--muted)', textTransform: 'uppercase', letterSpacing: '0.08em', marginBottom: 10 }}>Warnings</div>
                             <div style={{ color: 'var(--muted)', lineHeight: 1.5 }}>
                               {p.flags?.is_mpo ? (
                                 <>
-                                  <b>Warning:</b> this pool is flagged as part of a <b>multi-pool operator (MPO)</b>. Choosing it can increase stake concentration.
+                                  <b>Blunt warning:</b> this pool is flagged as part of a <b>multi-pool operator (MPO)</b>. Choosing it can actively worsen decentralization.
                                 </>
                               ) : (
                                 <>
-                                  <b>Nice:</b> this looks like a <b>single-operator</b> pool (based on current evidence). This generally helps decentralization.
+                                  <b>Good sign:</b> this looks like a <b>single-operator</b> pool (based on current evidence).
                                 </>
                               )}
                               {p.flags?.under_1_block_expected ? (
                                 <>
                                   <br />
                                   <br />
-                                  <b>Variance note:</b> under ~1 expected block/epoch means rewards can be spiky.
+                                  <b>Variance note:</b> under ~1 expected block/epoch can be spiky.
                                 </>
                               ) : null}
                             </div>
-                            <div style={{ marginTop: 10, display: 'flex', gap: 8, flexWrap: 'wrap' }}>
-                              {p.mpo?.evidence?.slice?.(0, 4)?.map((e, i) => (
-                                <Badge key={i} tone="info">
-                                  {e.type}: {String(e.value).slice(0, 28)}
-                                </Badge>
-                              ))}
-                              {!p.mpo?.evidence?.length && <span style={{ color: 'var(--muted)' }}>No MPO evidence.</span>}
-                            </div>
+                            {p.mpo?.evidence?.length ? (
+                              <div style={{ marginTop: 10, display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+                                {p.mpo.evidence.slice(0, 4).map((e, i) => (
+                                  <Badge key={i} tone="info">
+                                    {e.type}: {String(e.value).slice(0, 28)}
+                                  </Badge>
+                                ))}
+                              </div>
+                            ) : null}
                           </div>
 
                           <div style={{ border: '1px solid var(--border)', borderRadius: 14, padding: 12, background: 'var(--panel2)' }}>
-                            <div style={{ fontSize: 11, color: 'var(--muted)', textTransform: 'uppercase', letterSpacing: '0.08em', marginBottom: 10 }}>
-                              Links
-                            </div>
+                            <div style={{ fontSize: 11, color: 'var(--muted)', textTransform: 'uppercase', letterSpacing: '0.08em', marginBottom: 10 }}>Links</div>
                             {(() => {
                               const links = externalLinks(p.pool_id_bech32)
                               return (
@@ -621,12 +730,6 @@ export default function App() {
                             })()}
                           </div>
                         </div>
-
-                        {p.description ? (
-                          <div style={{ marginTop: 12, color: 'var(--muted)', lineHeight: 1.55 }}>
-                            <b style={{ color: 'var(--text)' }}>Description:</b> {p.description}
-                          </div>
-                        ) : null}
                       </div>
                     )}
                   </div>
@@ -635,12 +738,7 @@ export default function App() {
             </section>
 
             <footer style={{ marginTop: 22, paddingTop: 16, borderTop: '1px solid var(--border)', color: 'var(--muted)', lineHeight: 1.55 }}>
-              <div>
-                Built as a community resource to help delegators make informed choices. Data: db-sync (relay), metadata URLs, and best-effort MPO inference.
-              </div>
-              <div style={{ marginTop: 6 }}>
-                Note: “max rewards” claims are not guaranteed; saturation and pool size mostly affect variance and tapering.
-              </div>
+              <div>Community resource. Data: db-sync + metadata. MPO detection: best-effort inference with evidence.</div>
             </footer>
           </>
         )}
