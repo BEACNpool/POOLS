@@ -28,6 +28,11 @@ export default function App() {
   const [data, setData] = useState(null)
   const [err, setErr] = useState(null)
   const [q, setQ] = useState('')
+  const [preferSpo, setPreferSpo] = useState(true)
+  const [avoidSaturated, setAvoidSaturated] = useState(true)
+  const [hideTooSmall, setHideTooSmall] = useState(false)
+  const [maxMargin, setMaxMargin] = useState(5) // percent
+  const [minCost, setMinCost] = useState('any') // any|170|340
 
   useEffect(() => {
     // On GitHub Pages this site is served under /POOLS/
@@ -44,11 +49,22 @@ export default function App() {
   const pools = data?.pools || []
   const filtered = useMemo(() => {
     const s = q.trim().toLowerCase()
-    if (!s) return pools
     return pools.filter(p => {
+      if (preferSpo && p.flags?.is_mpo) return false
+      if (avoidSaturated && (p.flags?.is_saturated || p.flags?.is_near_saturated)) return false
+      if (hideTooSmall && p.flags?.under_1_block_expected) return false
+
+      const marginPct = (Number(p.margin) || 0) * 100
+      if (marginPct > maxMargin) return false
+
+      const costAda = (Number(p.fixed_cost_lovelace) || 0) / 1_000_000
+      if (minCost === '170' && Math.round(costAda) !== 170) return false
+      if (minCost === '340' && Math.round(costAda) !== 340) return false
+
+      if (!s) return true
       return [p.ticker, p.name, p.pool_id_bech32].some(v => (v || '').toLowerCase().includes(s))
     })
-  }, [pools, q])
+  }, [pools, q, preferSpo, avoidSaturated, hideTooSmall, maxMargin, minCost])
 
   return (
     <div style={{ maxWidth: 1100, margin: '0 auto', padding: 24 }}>
@@ -74,11 +90,30 @@ export default function App() {
           {data?.network_summary && (
             <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
               <Badge>Epoch {data.network_summary.epoch_no}</Badge>
-              <Badge>Active pools: {data.network_summary.active_pools?.toLocaleString?.() ?? '—'}</Badge>
+              <Badge>k={data.network_summary.k_optimal_pool_count}</Badge>
+              <Badge>Saturation ≈ {formatAda(data.network_summary.saturation_cap_lovelace)}</Badge>
+              <Badge>~1 block/epoch ≈ {formatAda(data.network_summary.stake_for_1_block_expected_lovelace)}</Badge>
               <Badge>MPO stake: {(data.network_summary.mpo_stake_pct ?? 0).toFixed(1)}%</Badge>
             </div>
           )}
         </div>
+
+        {data?.network_summary && (
+          <section style={{ marginTop: 14, padding: 12, borderRadius: 14, border: '1px solid rgba(255,255,255,0.12)', background: 'rgba(255,255,255,0.03)' }}>
+            <h2 style={{ marginTop: 0, marginBottom: 8 }}>How rewards + saturation work (delegator version)</h2>
+            <p style={{ marginTop: 0, opacity: 0.9, lineHeight: 1.5 }}>
+              Cardano has an “optimal pool count” parameter <b>k</b>. Roughly: <b>network stake / k</b> gives the <b>saturation cap</b>.
+              Above that cap, rewards <b>taper</b>—you’re not getting “more” for piling into an already-big pool.
+            </p>
+            <p style={{ marginTop: 0, opacity: 0.9, lineHeight: 1.5 }}>
+              A pool’s expected blocks per epoch scales with stake. A very rough rule of thumb is you need about <b>{formatAda(data.network_summary.stake_for_1_block_expected_lovelace)}</b>
+              active stake to have <b>~1 block expected per epoch</b>. Below that, you can still earn rewards, but variance gets brutal.
+            </p>
+            <p style={{ marginTop: 0, marginBottom: 0, opacity: 0.85, lineHeight: 1.5 }}>
+              Concentration risk: when too much stake piles into a small set of operators (especially MPOs/exchanges), it weakens decentralization and increases correlated failure/attack risk.
+            </p>
+          </section>
+        )}
       </header>
 
       {err && (
@@ -102,6 +137,34 @@ export default function App() {
           </section>
 
           <section style={{ marginTop: 18 }}>
+            <h2 style={{ marginBottom: 8 }}>Find pools (filters)</h2>
+            <div style={{ display: 'flex', flexWrap: 'wrap', gap: 12, alignItems: 'center', marginBottom: 12 }}>
+              <label style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+                <input type="checkbox" checked={preferSpo} onChange={e => setPreferSpo(e.target.checked)} />
+                Prefer single operators (hide MPO pools)
+              </label>
+              <label style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+                <input type="checkbox" checked={avoidSaturated} onChange={e => setAvoidSaturated(e.target.checked)} />
+                Hide near-saturated pools
+              </label>
+              <label style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+                <input type="checkbox" checked={hideTooSmall} onChange={e => setHideTooSmall(e.target.checked)} />
+                Hide “too small to expect 1 block/epoch”
+              </label>
+              <label style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+                Max margin: <b>{maxMargin}%</b>
+                <input type="range" min={0} max={10} step={0.5} value={maxMargin} onChange={e => setMaxMargin(Number(e.target.value))} />
+              </label>
+              <label style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+                Min pool cost:
+                <select value={minCost} onChange={e => setMinCost(e.target.value)}>
+                  <option value="any">Any</option>
+                  <option value="170">170 ₳</option>
+                  <option value="340">340 ₳</option>
+                </select>
+              </label>
+            </div>
+
             <h2 style={{ marginBottom: 8 }}>Pools</h2>
             <div style={{ overflowX: 'auto' }}>
               <table style={{ width: '100%', borderCollapse: 'collapse' }}>
@@ -117,7 +180,21 @@ export default function App() {
                 </thead>
                 <tbody>
                   {filtered.slice(0, 250).map(p => (
-                    <tr key={p.pool_id_bech32} style={{ borderBottom: '1px solid rgba(255,255,255,0.08)' }}>
+                    <tr
+                      key={p.pool_id_bech32}
+                      style={{
+                        borderBottom: '1px solid rgba(255,255,255,0.08)',
+                        background: p.flags?.is_saturated
+                          ? 'rgba(255, 60, 60, 0.18)'
+                          : p.flags?.is_near_saturated
+                            ? 'rgba(255, 170, 0, 0.14)'
+                            : p.flags?.is_mpo
+                              ? 'rgba(160, 120, 255, 0.10)'
+                              : p.flags?.under_1_block_expected
+                                ? 'rgba(120, 190, 255, 0.08)'
+                                : 'transparent'
+                      }}
+                    >
                       <td style={{ padding: '10px 8px', fontWeight: 700 }}>{p.ticker || '—'}</td>
                       <td style={{ padding: '10px 8px' }}>{p.name || '—'}</td>
                       <td style={{ padding: '10px 8px' }}>

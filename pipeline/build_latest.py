@@ -411,33 +411,63 @@ join pool_relay pr on pr.update_id = l.pool_update_id;
             mpo_stake += p.get('active_stake_lovelace', 0)
     mpo_pct = (100.0 * mpo_stake / total_stake) if total_stake else 0.0
 
+    # Network params (k, min pool cost) from epoch_param
+    try:
+        ep_row = psql(f"select optimal_pool_count, min_pool_cost from epoch_param where epoch_no = {epoch_no} limit 1;").strip()
+        k_s, min_pool_cost_s = (ep_row.split('|') + ['0','0'])[:2]
+        k = int(k_s or '0')
+        min_pool_cost = int(min_pool_cost_s or '0')
+    except Exception:
+        k = 0
+        min_pool_cost = 0
+
+    saturation_cap = int(total_stake / k) if k else 0
+
+    blocks_per_epoch = 21600  # ~5 days * 24h * 60m * 60s / 20s
+    stake_for_1_block_expected = int(total_stake / blocks_per_epoch) if total_stake else 0
+
     network_summary = {
         'epoch_no': epoch_no,
         'active_pools': len(pools),
         'total_active_stake_lovelace': total_stake,
+        'k_optimal_pool_count': k,
+        'min_pool_cost_lovelace': min_pool_cost,
+        'saturation_cap_lovelace': saturation_cap,
+        'blocks_per_epoch': blocks_per_epoch,
+        'stake_for_1_block_expected_lovelace': stake_for_1_block_expected,
         'mpo_stake_pct': round(mpo_pct, 2),
     }
+
+    def pool_export(p: dict) -> dict:
+        stake = int(p.get('active_stake_lovelace', 0) or 0)
+        sat = (stake / saturation_cap) if saturation_cap else 0.0
+        return {
+            'pool_id_bech32': p['pool_id_bech32'],
+            'ticker': p.get('ticker'),
+            'name': p.get('name'),
+            'homepage': p.get('homepage'),
+            'description': p.get('description'),
+            'active_stake_lovelace': stake,
+            'pledge_lovelace': int(p.get('pledge_lovelace', 0) or 0),
+            'margin': p.get('margin'),
+            'fixed_cost_lovelace': int(p.get('fixed_cost_lovelace', 0) or 0),
+            'metadata_url': p.get('metadata_url'),
+            'metadata_hash_hex': p.get('metadata_hash_hex'),
+            'saturation_ratio': round(float(sat), 4),
+            'flags': {
+                'is_mpo': bool(p.get('mpo')),
+                'is_saturated': bool(saturation_cap and stake >= saturation_cap),
+                'is_near_saturated': bool(saturation_cap and stake >= 0.95 * saturation_cap),
+                'under_1_block_expected': bool(stake_for_1_block_expected and stake < stake_for_1_block_expected),
+            },
+            'mpo': p.get('mpo'),
+        }
 
     out = {
         'generated_at': now,
         'network_summary': network_summary,
         'mpo_groups': mpo_groups[:500],
-        'pools': [
-            {
-                'pool_id_bech32': p['pool_id_bech32'],
-                'ticker': p.get('ticker'),
-                'name': p.get('name'),
-                'active_stake_lovelace': p.get('active_stake_lovelace', 0),
-                'pledge_lovelace': p.get('pledge_lovelace', 0),
-                'margin': p.get('margin'),
-                'fixed_cost_lovelace': p.get('fixed_cost_lovelace', 0),
-                'metadata_url': p.get('metadata_url'),
-                'metadata_hash_hex': p.get('metadata_hash_hex'),
-                'homepage': p.get('homepage'),
-                'description': p.get('description'),
-                'mpo': p.get('mpo'),
-            } for p in sorted(pools, key=lambda x: x.get('active_stake_lovelace', 0), reverse=True)
-        ]
+        'pools': [pool_export(p) for p in sorted(pools, key=lambda x: x.get('active_stake_lovelace', 0), reverse=True)]
     }
 
     os.makedirs(os.path.dirname(OUT_PATH), exist_ok=True)
