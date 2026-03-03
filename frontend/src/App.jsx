@@ -14,8 +14,9 @@ function Badge({ children }) {
       display: 'inline-block',
       padding: '2px 8px',
       borderRadius: 999,
-      border: '1px solid rgba(255,255,255,0.18)',
-      background: 'rgba(255,255,255,0.06)',
+      border: '1px solid var(--border)',
+      background: 'var(--panel)',
+      color: 'var(--text)',
       fontSize: 12,
       lineHeight: '18px'
     }}>
@@ -33,6 +34,16 @@ export default function App() {
   const [hideTooSmall, setHideTooSmall] = useState(false)
   const [maxMargin, setMaxMargin] = useState(5) // percent
   const [minCost, setMinCost] = useState('any') // any|170|340
+
+  const [theme, setTheme] = useState(() => {
+    const saved = localStorage.getItem('theme')
+    return saved || 'dark'
+  })
+
+  useEffect(() => {
+    document.documentElement.dataset.theme = theme
+    localStorage.setItem('theme', theme)
+  }, [theme])
 
   useEffect(() => {
     // On GitHub Pages this site is served under /POOLS/
@@ -69,8 +80,27 @@ export default function App() {
   return (
     <div style={{ maxWidth: 1100, margin: '0 auto', padding: 24 }}>
       <header style={{ marginBottom: 18 }}>
-        <h1 style={{ margin: 0 }}>How to find a stake pool operator (SPO)</h1>
-        <p style={{ marginTop: 8, opacity: 0.85 }}>
+        <div style={{ display: 'flex', alignItems: 'baseline', justifyContent: 'space-between', gap: 12, flexWrap: 'wrap' }}>
+          <h1 style={{ margin: 0 }}>How to find a stake pool operator (SPO)</h1>
+          <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+            <span style={{ opacity: 0.8, fontSize: 12 }}>Theme</span>
+            <button
+              onClick={() => setTheme(theme === 'dark' ? 'light' : 'dark')}
+              style={{
+                padding: '6px 10px',
+                borderRadius: 10,
+                border: '1px solid var(--border)',
+                background: 'var(--panel)',
+                color: 'var(--text)',
+                cursor: 'pointer'
+              }}
+            >
+              {theme === 'dark' ? 'Dark' : 'Light'}
+            </button>
+          </div>
+        </div>
+
+        <p style={{ marginTop: 8, color: 'var(--muted)' }}>
           A community-built explorer to help delegators choose pools that support decentralization—without giving up solid rewards.
         </p>
         <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap', alignItems: 'center' }}>
@@ -82,9 +112,9 @@ export default function App() {
               padding: '10px 12px',
               borderRadius: 10,
               minWidth: 320,
-              border: '1px solid rgba(255,255,255,0.18)',
-              background: 'rgba(255,255,255,0.04)',
-              color: 'white'
+              border: '1px solid var(--border)',
+              background: 'var(--panel)',
+              color: 'var(--text)'
             }}
           />
           {data?.network_summary && (
@@ -99,7 +129,7 @@ export default function App() {
         </div>
 
         {data?.network_summary && (
-          <section style={{ marginTop: 14, padding: 12, borderRadius: 14, border: '1px solid rgba(255,255,255,0.12)', background: 'rgba(255,255,255,0.03)' }}>
+          <section style={{ marginTop: 14, padding: 12, borderRadius: 14, border: '1px solid var(--border)', background: 'var(--panel2)' }}>
             <h2 style={{ marginTop: 0, marginBottom: 8 }}>How rewards + saturation work (delegator version)</h2>
             <p style={{ marginTop: 0, opacity: 0.9, lineHeight: 1.5 }}>
               Cardano has an “optimal pool count” parameter <b>k</b>. Roughly: <b>network stake / k</b> gives the <b>saturation cap</b>.
@@ -199,7 +229,7 @@ export default function App() {
                       <td style={{ padding: '10px 8px' }}>{p.name || '—'}</td>
                       <td style={{ padding: '10px 8px' }}>
                         {p.homepage ? (
-                          <a href={p.homepage} target="_blank" rel="noreferrer" style={{ color: 'white' }}>
+                          <a href={p.homepage} target="_blank" rel="noreferrer" style={{ color: '#9fd3ff', textDecoration: 'none' }}>
                             {p.homepage.replace(/^https?:\/\//, '')}
                           </a>
                         ) : (
