@@ -195,7 +195,8 @@ export default function App() {
   const [err, setErr] = useState(null)
 
   // View state: clean two-screen layout
-  const [view, setView] = useState('intro') // intro | results
+  const [view, setView] = useState('intro1') // intro1 | intro2 | results
+  const [goal, setGoal] = useState(null) // 'max' | 'decentralize'
 
   // UI state
   const [theme, setTheme] = useState(() => localStorage.getItem('theme') || 'dark')
@@ -264,27 +265,31 @@ export default function App() {
     return { totalKnown, mpo, sat, small }
   }, [pools])
 
-  function applyPath(path) {
-    // Clean defaults: we WARN with flags, but these paths set sensible starting filters.
-    if (path === 'max') {
-      setHideMpo(false)
-      setHideNearSat(false)
-      setHideTooSmall(false)
-      setMaxMargin(5)
-      setMinCost('any')
-    } else if (path === 'balanced') {
-      setHideMpo(false)
-      setHideNearSat(true)
-      setHideTooSmall(true)
-      setMaxMargin(5)
-      setMinCost('any')
-    } else if (path === 'decentralize') {
-      setHideMpo(true)
-      setHideNearSat(true)
-      setHideTooSmall(true)
-      setMaxMargin(5)
+  function applyGoal(nextGoal) {
+    setGoal(nextGoal)
+    // Reset to neutral before the fee-step applies a specific preference
+    setHideNearSat(true)
+    setHideTooSmall(true)
+    // Goal effects
+    if (nextGoal === 'decentralize') setHideMpo(true)
+    else setHideMpo(false)
+
+    setView('intro2')
+  }
+
+  function applyFeePreference(pref) {
+    // pref: 'percent' | 'fixed'
+    // Percent: prefer low margin (keep fixed cost any)
+    if (pref === 'percent') {
+      setMaxMargin(1)
       setMinCost('any')
     }
+    // Fixed: prefer minimum fixed fee (170) (keep margin moderate)
+    if (pref === 'fixed') {
+      setMinCost('170')
+      setMaxMargin(5)
+    }
+
     setView('results')
   }
 
@@ -382,75 +387,109 @@ export default function App() {
 
         {!data && !err && <div style={{ marginTop: 14, opacity: 0.85 }}>Loading latest snapshot…</div>}
 
-        {data && view === 'intro' && (
-          <>
-            <section style={{ marginTop: 14, border: '1px solid var(--border)', background: 'var(--panel2)', borderRadius: 18, padding: 18 }}>
-              <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap', alignItems: 'center', justifyContent: 'space-between' }}>
-                <div>
-                  <div style={{ fontSize: 20, fontWeight: 950, letterSpacing: '-0.02em' }}>Pick what you care about</div>
-                  <div style={{ marginTop: 8, color: 'var(--muted)', lineHeight: 1.55 }}>
-                    We’ll set reasonable defaults. You can adjust everything after.
-                  </div>
-                </div>
-                <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', justifyContent: 'flex-end' }}>
-                  <button
-                    onClick={() => setShowHow(true)}
-                    style={{ border: '1px solid var(--border)', background: 'var(--panel)', color: 'var(--text)', borderRadius: 12, padding: '8px 10px', cursor: 'pointer' }}
-                  >
-                    How this works
-                  </button>
+        {data && view === 'intro1' && (
+          <section style={{ marginTop: 14, border: '1px solid var(--border)', background: 'var(--panel2)', borderRadius: 18, padding: 18 }}>
+            <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap', alignItems: 'center', justifyContent: 'space-between' }}>
+              <div>
+                <div style={{ fontSize: 20, fontWeight: 950, letterSpacing: '-0.02em' }}>Step 1 — Choose your goal</div>
+                <div style={{ marginTop: 8, color: 'var(--muted)', lineHeight: 1.55 }}>
+                  Quick setup. You can always change filters later.
                 </div>
               </div>
+              <button
+                onClick={() => setShowHow(true)}
+                style={{ border: '1px solid var(--border)', background: 'var(--panel)', color: 'var(--text)', borderRadius: 12, padding: '8px 10px', cursor: 'pointer' }}
+              >
+                How this works
+              </button>
+            </div>
 
-              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, minmax(0, 1fr))', gap: 12, marginTop: 16 }}>
-                <button
-                  onClick={() => applyPath('max')}
-                  style={{ textAlign: 'left', border: '1px solid var(--border)', background: 'var(--panel)', color: 'var(--text)', borderRadius: 18, padding: 16, cursor: 'pointer' }}
-                >
-                  <div style={{ fontWeight: 950, fontSize: 16 }}>Max rewards</div>
-                  <div style={{ marginTop: 8, color: 'var(--muted)', lineHeight: 1.5 }}>
-                    Shows everything. Warnings stay on.
-                    <br />
-                    <b>Can actively worsen decentralization</b> via concentration.
-                  </div>
-                </button>
-
-                <button
-                  onClick={() => applyPath('balanced')}
-                  style={{ textAlign: 'left', border: '1px solid var(--border)', background: 'var(--panel)', color: 'var(--text)', borderRadius: 18, padding: 16, cursor: 'pointer' }}
-                >
-                  <div style={{ fontWeight: 950, fontSize: 16 }}>Balanced</div>
-                  <div style={{ marginTop: 8, color: 'var(--muted)', lineHeight: 1.5 }}>
-                    Avoids the obvious traps:
-                    <br />
-                    near-saturation + tiny variance pools.
-                  </div>
-                </button>
-
-                <button
-                  onClick={() => applyPath('decentralize')}
-                  style={{ textAlign: 'left', border: '1px solid rgba(46,213,115,0.32)', background: 'rgba(46,213,115,0.10)', color: 'var(--text)', borderRadius: 18, padding: 16, cursor: 'pointer' }}
-                >
-                  <div style={{ fontWeight: 950, fontSize: 16 }}>Help decentralization (recommended)</div>
-                  <div style={{ marginTop: 8, color: 'var(--muted)', lineHeight: 1.5 }}>
-                    Prefers single operators and avoids concentration.
-                  </div>
-                </button>
-              </div>
-
-              <div style={{ marginTop: 14, display: 'flex', justifyContent: 'space-between', gap: 10, flexWrap: 'wrap' }}>
-                <div style={{ color: 'var(--muted)', fontSize: 12 }}>
-                  Snapshot: epoch {ns?.epoch_no} • saturation ≈ {formatAdaShort(ns?.saturation_cap_lovelace)} • ~1 block/epoch ≈ {formatAdaShort(ns?.stake_for_1_block_expected_lovelace)}
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, minmax(0, 1fr))', gap: 12, marginTop: 16 }}>
+              <button
+                onClick={() => applyGoal('max')}
+                style={{ textAlign: 'left', border: '1px solid var(--border)', background: 'var(--panel)', color: 'var(--text)', borderRadius: 18, padding: 16, cursor: 'pointer' }}
+              >
+                <div style={{ fontWeight: 950, fontSize: 16 }}>Max rewards</div>
+                <div style={{ marginTop: 8, color: 'var(--muted)', lineHeight: 1.5 }}>
+                  Shows everything. Flags warn you.
+                  <br />
+                  <b>Can actively worsen decentralization</b> via concentration.
                 </div>
-                <button
-                  onClick={() => setView('results')}
-                  style={{ border: 'none', background: 'transparent', color: 'var(--link)', cursor: 'pointer', padding: 0, fontSize: 12 }}
-                >
-                  Skip → browse all pools
-                </button>
+              </button>
+
+              <button
+                onClick={() => applyGoal('decentralize')}
+                style={{ textAlign: 'left', border: '1px solid rgba(46,213,115,0.32)', background: 'rgba(46,213,115,0.10)', color: 'var(--text)', borderRadius: 18, padding: 16, cursor: 'pointer' }}
+              >
+                <div style={{ fontWeight: 950, fontSize: 16 }}>Help decentralization</div>
+                <div style={{ marginTop: 8, color: 'var(--muted)', lineHeight: 1.5 }}>
+                  Prefer single operators, avoid MPO concentration.
+                </div>
+              </button>
+            </div>
+
+            <div style={{ marginTop: 14, display: 'flex', justifyContent: 'space-between', gap: 10, flexWrap: 'wrap' }}>
+              <div style={{ color: 'var(--muted)', fontSize: 12 }}>
+                Snapshot: epoch {ns?.epoch_no} • saturation ≈ {formatAdaShort(ns?.saturation_cap_lovelace)} • ~1 block/epoch ≈ {formatAdaShort(ns?.stake_for_1_block_expected_lovelace)}
               </div>
-            </section>
-          </>
+              <button
+                onClick={() => setView('results')}
+                style={{ border: 'none', background: 'transparent', color: 'var(--link)', cursor: 'pointer', padding: 0, fontSize: 12 }}
+              >
+                Skip → browse all pools
+              </button>
+            </div>
+          </section>
+        )}
+
+        {data && view === 'intro2' && (
+          <section style={{ marginTop: 14, border: '1px solid var(--border)', background: 'var(--panel2)', borderRadius: 18, padding: 18 }}>
+            <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap', alignItems: 'center', justifyContent: 'space-between' }}>
+              <div>
+                <div style={{ fontSize: 20, fontWeight: 950, letterSpacing: '-0.02em' }}>Step 2 — Choose a fee preference</div>
+                <div style={{ marginTop: 8, color: 'var(--muted)', lineHeight: 1.55 }}>
+                  Goal: <b style={{ color: 'var(--text)' }}>{goal === 'decentralize' ? 'Help decentralization' : 'Max rewards'}</b>
+                </div>
+              </div>
+              <button
+                onClick={() => setView('intro1')}
+                style={{ border: '1px solid var(--border)', background: 'var(--panel)', color: 'var(--text)', borderRadius: 12, padding: '8px 10px', cursor: 'pointer' }}
+              >
+                ← Back
+              </button>
+            </div>
+
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, minmax(0, 1fr))', gap: 12, marginTop: 16 }}>
+              <button
+                onClick={() => applyFeePreference('percent')}
+                style={{ textAlign: 'left', border: '1px solid var(--border)', background: 'var(--panel)', color: 'var(--text)', borderRadius: 18, padding: 16, cursor: 'pointer' }}
+              >
+                <div style={{ fontWeight: 950, fontSize: 16 }}>% margin (low)</div>
+                <div style={{ marginTop: 8, color: 'var(--muted)', lineHeight: 1.5 }}>
+                  Starts with <b>max margin = 1%</b>.
+                </div>
+              </button>
+
+              <button
+                onClick={() => applyFeePreference('fixed')}
+                style={{ textAlign: 'left', border: '1px solid var(--border)', background: 'var(--panel)', color: 'var(--text)', borderRadius: 18, padding: 16, cursor: 'pointer' }}
+              >
+                <div style={{ fontWeight: 950, fontSize: 16 }}>Fixed fee (min)</div>
+                <div style={{ marginTop: 8, color: 'var(--muted)', lineHeight: 1.5 }}>
+                  Starts with <b>fixed fee = 170 ₳</b>.
+                </div>
+              </button>
+            </div>
+
+            <div style={{ marginTop: 14, display: 'flex', justifyContent: 'flex-end' }}>
+              <button
+                onClick={() => setView('results')}
+                style={{ border: 'none', background: 'transparent', color: 'var(--link)', cursor: 'pointer', padding: 0, fontSize: 12 }}
+              >
+                Skip → browse all pools
+              </button>
+            </div>
+          </section>
         )}
 
         {data && view === 'results' && (
