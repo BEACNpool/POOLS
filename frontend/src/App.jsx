@@ -158,60 +158,25 @@ function Modal({ title, onClose, children }) {
   )
 }
 
-function Drawer({ open, onClose, children }) {
-  if (!open) return null
-  return (
-    <div
-      onClick={onClose}
-      style={{
-        position: 'fixed',
-        inset: 0,
-        background: 'rgba(0,0,0,0.4)',
-        zIndex: 40
-      }}
-    >
-      <div
-        onClick={e => e.stopPropagation()}
-        style={{
-          position: 'absolute',
-          top: 0,
-          right: 0,
-          height: '100%',
-          width: 'min(420px, 92vw)',
-          borderLeft: '1px solid var(--border)',
-          background: 'var(--bg)',
-          padding: 16,
-          overflow: 'auto'
-        }}
-      >
-        {children}
-      </div>
-    </div>
-  )
-}
-
 export default function App() {
   const [data, setData] = useState(null)
   const [err, setErr] = useState(null)
 
-  // View state: clean two-screen layout
-  const [view, setView] = useState('intro1') // intro1 | intro2 | results
-  const [goal, setGoal] = useState(null) // 'max' | 'decentralize'
+  // View state: Step 1 (filters) -> Step 2 (results)
+  const [view, setView] = useState('filters') // filters | results
 
   // UI state
   const [theme, setTheme] = useState(() => localStorage.getItem('theme') || 'dark')
   const [q, setQ] = useState('')
   const [selected, setSelected] = useState(null)
-  const [showFilters, setShowFilters] = useState(false)
   const [showHow, setShowHow] = useState(false)
 
-  // Filters (user-controlled; nothing is hidden by default unless a path sets it)
+  // Filters (user-controlled on landing)
   const [hideMpo, setHideMpo] = useState(false)
   const [hideNearSat, setHideNearSat] = useState(false)
   const [hideTooSmall, setHideTooSmall] = useState(false)
   const [maxMargin, setMaxMargin] = useState(5)
   const [minCost, setMinCost] = useState('any')
-  const [feeMode, setFeeMode] = useState('percent') // 'percent' | 'fixed'
 
   useEffect(() => {
     document.documentElement.dataset.theme = theme
@@ -265,25 +230,6 @@ export default function App() {
     }
     return { totalKnown, mpo, sat, small }
   }, [pools])
-
-  function applyGoal(nextGoal) {
-    setGoal(nextGoal)
-    // Reset to neutral before the fee-step applies a specific preference
-    setHideNearSat(true)
-    // Don't hide small/understaked pools by default; just flag them.
-    setHideTooSmall(false)
-    // Goal effects
-    if (nextGoal === 'decentralize') setHideMpo(true)
-    else setHideMpo(false)
-
-    setView('intro2')
-  }
-
-  function selectFeeMode(next) {
-    // Only affects which option is highlighted / explained.
-    // Do NOT overwrite the user’s existing slider/dropdown selections.
-    setFeeMode(next)
-  }
 
   return (
     <div style={{ minHeight: '100vh', color: 'var(--text)' }}>
@@ -356,6 +302,19 @@ export default function App() {
           <div style={{ display: 'flex', gap: 10, alignItems: 'center', flexWrap: 'wrap' }}>
             {ns && <Badge tone="info">Epoch {ns.epoch_no}</Badge>}
             <button
+              onClick={() => setShowHow(true)}
+              style={{
+                padding: '8px 12px',
+                borderRadius: 12,
+                border: '1px solid var(--border)',
+                background: 'var(--panel)',
+                color: 'var(--text)',
+                cursor: 'pointer'
+              }}
+            >
+              How it works
+            </button>
+            <button
               onClick={() => setTheme(theme === 'dark' ? 'light' : 'dark')}
               style={{
                 padding: '8px 12px',
@@ -379,151 +338,73 @@ export default function App() {
 
         {!data && !err && <div style={{ marginTop: 14, opacity: 0.85 }}>Loading latest snapshot…</div>}
 
-        {data && view === 'intro1' && (
+        {data && view === 'filters' && (
           <section style={{ marginTop: 14, border: '1px solid var(--border)', background: 'var(--panel2)', borderRadius: 18, padding: 18 }}>
-            <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap', alignItems: 'center', justifyContent: 'space-between' }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', gap: 12, flexWrap: 'wrap', alignItems: 'baseline' }}>
               <div>
-                <div style={{ fontSize: 20, fontWeight: 950, letterSpacing: '-0.02em' }}>Step 1 — Choose your goal</div>
+                <div style={{ fontSize: 20, fontWeight: 950, letterSpacing: '-0.02em' }}>Filters</div>
                 <div style={{ marginTop: 8, color: 'var(--muted)', lineHeight: 1.55 }}>
-                  Quick setup. You can always change filters later.
+                  Pick what to hide, then we’ll show the pool list.
                 </div>
               </div>
-              <button
-                onClick={() => setShowHow(true)}
-                style={{ border: '1px solid var(--border)', background: 'var(--panel)', color: 'var(--text)', borderRadius: 12, padding: '8px 10px', cursor: 'pointer' }}
-              >
-                How this works
-              </button>
-            </div>
-
-            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, minmax(0, 1fr))', gap: 12, marginTop: 16 }}>
-              <button
-                onClick={() => applyGoal('max')}
-                style={{ textAlign: 'left', border: '1px solid var(--border)', background: 'var(--panel)', color: 'var(--text)', borderRadius: 18, padding: 16, cursor: 'pointer' }}
-              >
-                <div style={{ fontWeight: 950, fontSize: 16 }}>Max rewards</div>
-                <div style={{ marginTop: 8, color: 'var(--muted)', lineHeight: 1.5 }}>
-                  Shows everything. Flags warn you.
-                  <br />
-                  <b>Can actively worsen decentralization</b> via concentration.
-                </div>
-              </button>
-
-              <button
-                onClick={() => applyGoal('decentralize')}
-                style={{ textAlign: 'left', border: '1px solid rgba(46,213,115,0.32)', background: 'rgba(46,213,115,0.10)', color: 'var(--text)', borderRadius: 18, padding: 16, cursor: 'pointer' }}
-              >
-                <div style={{ fontWeight: 950, fontSize: 16 }}>Help decentralization</div>
-                <div style={{ marginTop: 8, color: 'var(--muted)', lineHeight: 1.5 }}>
-                  Prefer single operators, avoid MPO concentration.
-                </div>
-              </button>
-            </div>
-
-            <div style={{ marginTop: 14, display: 'flex', justifyContent: 'space-between', gap: 10, flexWrap: 'wrap' }}>
-              <div style={{ color: 'var(--muted)', fontSize: 12 }}>
-                Snapshot: epoch {ns?.epoch_no} • saturation ≈ {formatAdaShort(ns?.saturation_cap_lovelace)} • ~1 block/epoch ≈ {formatAdaShort(ns?.stake_for_1_block_expected_lovelace)}
+              <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap', alignItems: 'center' }}>
+                <Badge tone="neutral">Pools known: <AnimNum value={counts.totalKnown} /></Badge>
+                <Badge tone="info">Delegated pools: {ns?.active_pools?.toLocaleString?.() ?? '—'}</Badge>
               </div>
-              <button
-                onClick={() => setView('results')}
-                style={{ border: 'none', background: 'transparent', color: 'var(--link)', cursor: 'pointer', padding: 0, fontSize: 12 }}
-              >
-                Skip → browse all pools
-              </button>
             </div>
-          </section>
-        )}
 
-        {data && view === 'intro2' && (
-          <section style={{ marginTop: 14, border: '1px solid var(--border)', background: 'var(--panel2)', borderRadius: 18, padding: 18 }}>
-            <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap', alignItems: 'center', justifyContent: 'space-between' }}>
-              <div>
-                <div style={{ fontSize: 20, fontWeight: 950, letterSpacing: '-0.02em' }}>Step 2 — Fees: pick what you want to optimize</div>
-                <div style={{ marginTop: 8, color: 'var(--muted)', lineHeight: 1.55 }}>
-                  Goal: <b style={{ color: 'var(--text)' }}>{goal === 'decentralize' ? 'Help decentralization' : 'Max rewards'}</b>
+            <div style={{ marginTop: 16, display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 14 }}>
+              <div style={{ border: '1px solid var(--border)', background: 'var(--panel)', borderRadius: 16, padding: 14 }}>
+                <div style={{ fontWeight: 900, marginBottom: 10 }}>Hide / show</div>
+                <label style={{ display: 'flex', gap: 10, alignItems: 'center', padding: '6px 0' }}>
+                  <input type="checkbox" checked={hideMpo} onChange={e => setHideMpo(e.target.checked)} />
+                  Hide MPO pools
+                </label>
+                <label style={{ display: 'flex', gap: 10, alignItems: 'center', padding: '6px 0' }}>
+                  <input type="checkbox" checked={hideNearSat} onChange={e => setHideNearSat(e.target.checked)} />
+                  Hide near-saturated pools
+                </label>
+                <label style={{ display: 'flex', gap: 10, alignItems: 'center', padding: '6px 0' }}>
+                  <input type="checkbox" checked={hideTooSmall} onChange={e => setHideTooSmall(e.target.checked)} />
+                  Hide &lt; 1 expected block/epoch
+                </label>
+
+                <div style={{ marginTop: 10, display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+                  <Badge tone="bad">Flagged MPO: {counts.mpo.toLocaleString()}</Badge>
+                  <Badge tone="warn">Near/sat: {counts.sat.toLocaleString()}</Badge>
+                  <Badge tone="neutral">Variance: {counts.small.toLocaleString()}</Badge>
                 </div>
               </div>
-              <button
-                onClick={() => setView('intro1')}
-                style={{ border: '1px solid var(--border)', background: 'var(--panel)', color: 'var(--text)', borderRadius: 12, padding: '8px 10px', cursor: 'pointer' }}
-              >
-                ← Back
-              </button>
-            </div>
 
-            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, minmax(0, 1fr))', gap: 12, marginTop: 16 }}>
-              <button
-                onClick={() => selectFeeMode('percent')}
-                style={{
-                  textAlign: 'left',
-                  border: '1px solid var(--border)',
-                  background: feeMode === 'percent' ? 'rgba(83,82,237,0.14)' : 'var(--panel)',
-                  color: 'var(--text)',
-                  borderRadius: 18,
-                  padding: 16,
-                  cursor: 'pointer'
-                }}
-              >
-                <div style={{ fontWeight: 950, fontSize: 16 }}>% margin</div>
-                <div style={{ marginTop: 8, color: 'var(--muted)', lineHeight: 1.5 }}>
-                  Filter pools by max % margin.
+              <div style={{ border: '1px solid var(--border)', background: 'var(--panel)', borderRadius: 16, padding: 14 }}>
+                <div style={{ fontWeight: 900, marginBottom: 10 }}>Fees</div>
+                <div style={{ color: 'var(--muted)', fontSize: 12, marginBottom: 8 }}>
+                  Max % margin: <b style={{ color: 'var(--text)' }}>{maxMargin}%</b>
                 </div>
-              </button>
+                <input type="range" min={0} max={10} step={0.5} value={maxMargin} onChange={e => setMaxMargin(Number(e.target.value))} style={{ width: '100%' }} />
 
-              <button
-                onClick={() => selectFeeMode('fixed')}
-                style={{
-                  textAlign: 'left',
-                  border: '1px solid var(--border)',
-                  background: feeMode === 'fixed' ? 'rgba(83,82,237,0.14)' : 'var(--panel)',
-                  color: 'var(--text)',
-                  borderRadius: 18,
-                  padding: 16,
-                  cursor: 'pointer'
-                }}
-              >
-                <div style={{ fontWeight: 950, fontSize: 16 }}>Fixed fee</div>
-                <div style={{ marginTop: 8, color: 'var(--muted)', lineHeight: 1.5 }}>
-                  Filter pools by fixed fee (170/340).
-                </div>
-              </button>
-            </div>
-
-            <div style={{ marginTop: 14, borderTop: '1px solid var(--border)', paddingTop: 14 }}>
-              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
-                <div>
-                  <div style={{ color: 'var(--muted)', fontSize: 12, marginBottom: 8 }}>
-                    Max % margin: <b style={{ color: 'var(--text)' }}>{maxMargin}%</b>
-                  </div>
-                  <input type="range" min={0} max={10} step={0.5} value={maxMargin} onChange={e => setMaxMargin(Number(e.target.value))} style={{ width: '100%' }} />
-                </div>
-                <div>
-                  <div style={{ color: 'var(--muted)', fontSize: 12, marginBottom: 8 }}>Fixed fee</div>
-                  <select value={minCost} onChange={e => setMinCost(e.target.value)} style={{ width: '100%', padding: '10px 10px', borderRadius: 12, border: '1px solid var(--border)', background: 'var(--panel)', color: 'var(--text)' }}>
-                    <option value="any">Any</option>
-                    <option value="170">170 ₳</option>
-                    <option value="340">340 ₳</option>
-                  </select>
-                </div>
-              </div>
-              <div style={{ marginTop: 10, color: 'var(--muted)', fontSize: 12, lineHeight: 1.5 }}>
-                Both filters apply together. Use the buttons above to choose what you’re focusing on; your selections won’t reset.
+                <div style={{ marginTop: 12, color: 'var(--muted)', fontSize: 12, marginBottom: 8 }}>Fixed fee</div>
+                <select value={minCost} onChange={e => setMinCost(e.target.value)} style={{ width: '100%', padding: '10px 10px', borderRadius: 12, border: '1px solid var(--border)', background: 'var(--panel2)', color: 'var(--text)' }}>
+                  <option value="any">Any</option>
+                  <option value="170">170 ₳</option>
+                  <option value="340">340 ₳</option>
+                </select>
               </div>
             </div>
 
             <div style={{ marginTop: 14, display: 'flex', justifyContent: 'space-between', gap: 10, flexWrap: 'wrap', alignItems: 'center' }}>
+              <div style={{ color: 'var(--muted)', fontSize: 12 }}>
+                Snapshot: epoch {ns?.epoch_no} • saturation ≈ {formatAdaShort(ns?.saturation_cap_lovelace)} • ~1 block/epoch ≈ {formatAdaShort(ns?.stake_for_1_block_expected_lovelace)}
+              </div>
               <button
-                onClick={() => setView('results')}
-                style={{ border: 'none', background: 'transparent', color: 'var(--link)', cursor: 'pointer', padding: 0, fontSize: 12 }}
+                onClick={() => {
+                  setSelected(null)
+                  setQ('')
+                  setView('results')
+                }}
+                style={{ border: '1px solid var(--border)', background: 'var(--panel2)', color: 'var(--text)', borderRadius: 12, padding: '10px 14px', cursor: 'pointer', fontWeight: 900 }}
               >
-                Skip → browse all pools
-              </button>
-
-              <button
-                onClick={() => setView('results')}
-                style={{ border: '1px solid var(--border)', background: 'var(--panel)', color: 'var(--text)', borderRadius: 12, padding: '10px 14px', cursor: 'pointer', fontWeight: 800 }}
-              >
-                Show recommended pools →
+                Show pools →
               </button>
             </div>
           </section>
@@ -531,15 +412,12 @@ export default function App() {
 
         {data && view === 'results' && (
           <>
-            {/* Top bar: back + search + filters */}
+            {/* Top bar: back + search */}
             <section style={{ marginTop: 12, display: 'flex', gap: 10, alignItems: 'stretch', flexWrap: 'wrap' }}>
               <button
                 onClick={() => {
-                  setView('intro1')
-                  setShowFilters(false)
-                  setShowHow(false)
+                  setView('filters')
                   setSelected(null)
-                  setQ('')
                 }}
                 style={{
                   padding: '10px 14px',
@@ -550,7 +428,7 @@ export default function App() {
                   cursor: 'pointer'
                 }}
               >
-                ← Preferences
+                ← Filters
               </button>
 
               <div
@@ -579,43 +457,12 @@ export default function App() {
                   </button>
                 )}
               </div>
-
-              <button
-                onClick={() => setShowFilters(true)}
-                style={{
-                  padding: '10px 14px',
-                  borderRadius: 14,
-                  border: '1px solid var(--border)',
-                  background: 'var(--panel)',
-                  color: 'var(--text)',
-                  cursor: 'pointer'
-                }}
-              >
-                ⚙ Filters
-                <span style={{ marginLeft: 8, opacity: 0.8, fontSize: 12 }}>
-                  ({[hideMpo, hideNearSat, hideTooSmall].filter(Boolean).length})
-                </span>
-              </button>
-
-              <button
-                onClick={() => setShowHow(true)}
-                style={{
-                  padding: '10px 14px',
-                  borderRadius: 14,
-                  border: '1px solid var(--border)',
-                  background: 'var(--panel)',
-                  color: 'var(--text)',
-                  cursor: 'pointer'
-                }}
-              >
-                ?
-              </button>
             </section>
 
             {/* Small stat strip */}
             <section style={{ marginTop: 12, display: 'flex', gap: 10, flexWrap: 'wrap', alignItems: 'center' }}>
               <Badge tone="neutral">Showing {filtered.length.toLocaleString()} pools</Badge>
-              <Badge tone="info">Active pools (delegated): {ns?.active_pools?.toLocaleString?.() ?? '—'}</Badge>
+              <Badge tone="info">Delegated pools: {ns?.active_pools?.toLocaleString?.() ?? '—'}</Badge>
               <Badge tone="neutral">Saturation cap: {formatAdaShort(ns?.saturation_cap_lovelace)}</Badge>
               <Badge tone="neutral">MPO stake: {Math.round(ns?.mpo_stake_pct ?? 0)}%</Badge>
             </section>
@@ -808,7 +655,6 @@ export default function App() {
           </>
         )}
 
-        {/* How it works modal (tucked away) */}
         {showHow && (
           <Modal title="How it works" onClose={() => setShowHow(false)}>
             <div style={{ lineHeight: 1.6, color: 'var(--muted)' }}>
@@ -830,75 +676,6 @@ export default function App() {
             </div>
           </Modal>
         )}
-
-        {/* Filters drawer */}
-        <Drawer open={showFilters} onClose={() => setShowFilters(false)}>
-          <div style={{ display: 'flex', justifyContent: 'space-between', gap: 10, alignItems: 'center' }}>
-            <div style={{ fontWeight: 950, fontSize: 16 }}>Filters</div>
-            <button
-              onClick={() => setShowFilters(false)}
-              style={{ border: '1px solid var(--border)', background: 'var(--panel)', color: 'var(--text)', borderRadius: 12, padding: '6px 10px', cursor: 'pointer' }}
-            >
-              Done
-            </button>
-          </div>
-
-          <div style={{ marginTop: 12, display: 'flex', flexDirection: 'column', gap: 14 }}>
-            <label style={{ display: 'flex', gap: 10, alignItems: 'center' }}>
-              <input type="checkbox" checked={hideMpo} onChange={e => setHideMpo(e.target.checked)} />
-              Hide MPO pools
-            </label>
-            <label style={{ display: 'flex', gap: 10, alignItems: 'center' }}>
-              <input type="checkbox" checked={hideNearSat} onChange={e => setHideNearSat(e.target.checked)} />
-              Hide near-saturated pools
-            </label>
-            <label style={{ display: 'flex', gap: 10, alignItems: 'center' }}>
-              <input type="checkbox" checked={hideTooSmall} onChange={e => setHideTooSmall(e.target.checked)} />
-              Hide &lt; 1 expected block/epoch
-            </label>
-
-            <div style={{ borderTop: '1px solid var(--border)', paddingTop: 14 }}>
-              <div style={{ color: 'var(--muted)', fontSize: 12, marginBottom: 8 }}>Max margin: <b style={{ color: 'var(--text)' }}>{maxMargin}%</b></div>
-              <input type="range" min={0} max={10} step={0.5} value={maxMargin} onChange={e => setMaxMargin(Number(e.target.value))} style={{ width: '100%' }} />
-            </div>
-
-            <div>
-              <div style={{ color: 'var(--muted)', fontSize: 12, marginBottom: 8 }}>Fixed fee</div>
-              <select value={minCost} onChange={e => setMinCost(e.target.value)} style={{ width: '100%', padding: '10px 10px', borderRadius: 12, border: '1px solid var(--border)', background: 'var(--panel)', color: 'var(--text)' }}>
-                <option value="any">Any</option>
-                <option value="170">170 ₳</option>
-                <option value="340">340 ₳</option>
-              </select>
-            </div>
-
-            <div style={{ borderTop: '1px solid var(--border)', paddingTop: 14, display: 'flex', gap: 10, flexWrap: 'wrap' }}>
-              <Badge tone="info">Flagged MPO: {counts.mpo.toLocaleString()}</Badge>
-              <Badge tone="warn">Near/sat: {counts.sat.toLocaleString()}</Badge>
-              <Badge tone="neutral">Variance: {counts.small.toLocaleString()}</Badge>
-            </div>
-
-            <button
-              onClick={() => {
-                setHideMpo(false)
-                setHideNearSat(false)
-                setHideTooSmall(false)
-                setMaxMargin(5)
-                setMinCost('any')
-              }}
-              style={{
-                marginTop: 6,
-                padding: '10px 12px',
-                borderRadius: 12,
-                border: '1px solid var(--border)',
-                background: 'var(--panel)',
-                color: 'var(--text)',
-                cursor: 'pointer'
-              }}
-            >
-              Reset filters
-            </button>
-          </div>
-        </Drawer>
 
         <footer style={{ marginTop: 20, paddingTop: 14, borderTop: '1px solid var(--border)', color: 'var(--muted)', fontSize: 12 }}>
           Open-source community project. Data: db-sync + metadata URLs. MPO inference is best-effort with evidence.
