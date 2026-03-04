@@ -176,6 +176,7 @@ export default function App() {
   const [hideNearSat, setHideNearSat] = useState(false)
   const [hideTooSmall, setHideTooSmall] = useState(false)
   const [maxMargin, setMaxMargin] = useState(5)
+  const [marginMode, setMarginMode] = useState('max') // 'max' | 'any'
   const [minCost, setMinCost] = useState('any')
 
   useEffect(() => {
@@ -206,7 +207,7 @@ export default function App() {
         if (hideTooSmall && p.flags?.under_1_block_expected) return false
 
         const marginPct = (Number(p.margin) || 0) * 100
-        if (marginPct > maxMargin) return false
+        if (marginMode === 'max' && marginPct > maxMargin) return false
 
         const costAda = (Number(p.fixed_cost_lovelace) || 0) / 1_000_000
         if (minCost === '170' && Math.round(costAda) !== 170) return false
@@ -216,7 +217,7 @@ export default function App() {
         return [p.ticker, p.name, p.pool_id_bech32].some(v => (v || '').toLowerCase().includes(s))
       })
       .slice(0, 1200)
-  }, [pools, q, hideMpo, hideNearSat, hideTooSmall, maxMargin, minCost])
+  }, [pools, q, hideMpo, hideNearSat, hideTooSmall, marginMode, maxMargin, minCost])
 
   const counts = useMemo(() => {
     const totalKnown = pools.length
@@ -378,10 +379,27 @@ export default function App() {
 
               <div style={{ border: '1px solid var(--border)', background: 'var(--panel)', borderRadius: 16, padding: 14 }}>
                 <div style={{ fontWeight: 900, marginBottom: 10 }}>Fees</div>
-                <div style={{ color: 'var(--muted)', fontSize: 12, marginBottom: 8 }}>
-                  Max % margin: <b style={{ color: 'var(--text)' }}>{maxMargin}%</b>
+
+                <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap', alignItems: 'center' }}>
+                  <div style={{ color: 'var(--muted)', fontSize: 12 }}>Margin filter</div>
+                  <select
+                    value={marginMode}
+                    onChange={e => setMarginMode(e.target.value)}
+                    style={{ padding: '8px 10px', borderRadius: 12, border: '1px solid var(--border)', background: 'var(--panel2)', color: 'var(--text)' }}
+                  >
+                    <option value="any">All margins</option>
+                    <option value="max">Max % margin</option>
+                  </select>
                 </div>
-                <input type="range" min={0} max={10} step={0.5} value={maxMargin} onChange={e => setMaxMargin(Number(e.target.value))} style={{ width: '100%' }} />
+
+                {marginMode === 'max' && (
+                  <>
+                    <div style={{ marginTop: 10, color: 'var(--muted)', fontSize: 12, marginBottom: 8 }}>
+                      Max % margin: <b style={{ color: 'var(--text)' }}>{maxMargin}%</b>
+                    </div>
+                    <input type="range" min={0} max={10} step={0.5} value={maxMargin} onChange={e => setMaxMargin(Number(e.target.value))} style={{ width: '100%' }} />
+                  </>
+                )}
 
                 <div style={{ marginTop: 12, color: 'var(--muted)', fontSize: 12, marginBottom: 8 }}>Fixed fee</div>
                 <select value={minCost} onChange={e => setMinCost(e.target.value)} style={{ width: '100%', padding: '10px 10px', borderRadius: 12, border: '1px solid var(--border)', background: 'var(--panel2)', color: 'var(--text)' }}>
