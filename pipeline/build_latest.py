@@ -15,6 +15,7 @@ from datetime import datetime, timezone
 from typing import Dict, List, Set, Tuple
 import csv
 import io
+from urllib.parse import urlparse
 
 
 REPO_ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), '..'))
@@ -97,6 +98,32 @@ def extract_base_domain(host: str) -> str:
     if len(parts) < 2:
         return host
     return '.'.join(parts[-2:])
+
+
+def metadata_repo_key(url: str) -> str:
+    """Best-effort grouping key for pool metadata URLs.
+
+    Idea: many MPOs host multiple pool metadata files in the same GitHub repo/bucket.
+    We group by host + first two path segments (e.g., raw.githubusercontent.com/<org>/<repo>/...).
+
+    Returns '' if URL missing/unparseable.
+    """
+    u = (url or '').strip()
+    if not u:
+        return ''
+    try:
+        p = urlparse(u)
+    except Exception:
+        return ''
+    host = (p.hostname or '').lower()
+    if not host:
+        return ''
+    segs = [s for s in (p.path or '').split('/') if s]
+    if len(segs) >= 2:
+        return f"{host}/{segs[0]}/{segs[1]}"
+    if len(segs) == 1:
+        return f"{host}/{segs[0]}"
+    return host
 
 
 GENERIC_DDNS = {
@@ -268,6 +295,13 @@ join pool_relay pr on pr.update_id = l.pool_update_id;
     def add_evidence(root: str, ev: Evidence):
         evidence_by_root.setdefault(root, []).append(ev)
 
+    # Metadata URL repo/bucket clustering (medium-high confidence)
+    pools_by_meta: Dict[str, List[int]] = {}
+    for p in pools:
+        key = metadata_repo_key(p.get('metadata_url'))
+        if key:
+            pools_by_meta.setdefault(key, []).append(int(p['pool_hash_id']))
+
     # Merge by shared owner address
     for addrid, phids in pools_by_owner.items():
         phids = list(set(phids))
@@ -286,6 +320,15 @@ join pool_relay pr on pr.update_id = l.pool_update_id;
             pools_by_reward.setdefault(rid, []).append(int(p['pool_hash_id']))
 
     for rid, phids in pools_by_reward.items():
+        phids = list(set(phids))
+        if len(phids) < 2:
+            continue
+        base = str(phids[0])
+        for other in phids[1:]:
+            uf.union(base, str(other))
+
+    # Merge by metadata repo/bucket key (medium-high)
+    for key, phids in pools_by_meta.items():
         phids = list(set(phids))
         if len(phids) < 2:
             continue
@@ -335,6 +378,18 @@ join pool_relay pr on pr.update_id = l.pool_update_id;
             rid = list(reward_ids)[0]
             ev.append(Evidence('shared_reward_addr_id', str(rid)))
 
+        # shared metadata repo/bucket keys
+        meta_keys = []
+        for mid in member_ids:
+            p = pool_by_hash.get(mid)
+            if not p:
+                continue
+            k = metadata_repo_key(p.get('metadata_url'))
+            if k:
+                meta_keys.append(k)
+        for k in sorted(set(meta_keys))[:3]:
+            ev.append(Evidence('shared_metadata_repo', k))
+
         # shared relay domains
         all_domains = []
         for mid in member_ids:
@@ -362,6 +417,8 @@ join pool_relay pr on pr.update_id = l.pool_update_id;
         if 'shared_owner_addr_id' in types:
             score = max(score, 0.9)
         if 'shared_reward_addr_id' not in types and 'shared_owner_addr_id' not in types:
+            if 'shared_metadata_repo' in types:
+                score = max(score, 0.8)
             if 'shared_relay_domain' in types:
                 score = max(score, 0.7)
             if 'shared_relay_ipv4' in types:
