@@ -14,9 +14,11 @@ python3 -V >/dev/null
 
 # Build latest.json
 python3 pipeline/build_latest.py
+# Optional: also export a deep-dive CSV (kept in repo)
+python3 pipeline/export_locations_csv.py || true
 
-# Commit only if latest.json changed
-if git diff --quiet -- frontend/public/data/latest.json; then
+# Commit only if outputs changed
+if git diff --quiet -- frontend/public/data/latest.json frontend/public/downloads/cardano_pool_locations.csv; then
   echo "No data change; nothing to commit."
   exit 0
 fi
