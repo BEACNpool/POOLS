@@ -1,21 +1,29 @@
 #!/usr/bin/env python3
-"""Export pool relay locations as CSV.
+"""Export pool relay locations as a community-facing CSV.
 
-Runs on opsbox. Queries relay db-sync (via ssh relay docker exec psql) and writes:
-- public/cardano_pool_locations.csv
+Source-of-truth for geo fields:
+- https://global-api.cardano-visualisation.com/api/stakepools
+  (includes relay resolvedIp + latitude/longitude + geoCountry/geoCity)
 
-This is meant as a community-facing deep-dive artifact.
+We publish it at:
+- frontend/public/downloads/cardano_pool_locations.csv
+
+Runs on opsbox. No API keys required.
 """
 
+import csv
+import json
 import os
 import subprocess
 
 REPO_ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), '..'))
 OUT_PATH = os.path.join(REPO_ROOT, 'frontend', 'public', 'downloads', 'cardano_pool_locations.csv')
 
+API_URL = 'https://global-api.cardano-visualisation.com/api/stakepools'
 
-def run(cmd, *, input_text=None):
-    p = subprocess.run(cmd, input=input_text, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
+
+def sh(cmd):
+    p = subprocess.run(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
     if p.returncode != 0:
         raise RuntimeError(f"command failed ({p.returncode}): {' '.join(cmd)}\n{p.stderr}")
     return p.stdout
@@ -24,68 +32,55 @@ def run(cmd, *, input_text=None):
 def main():
     os.makedirs(os.path.dirname(OUT_PATH), exist_ok=True)
 
-    sql = r"""
-with latest as (
-  select distinct on (pu.hash_id)
-    pu.hash_id,
-    pu.id as pool_update_id,
-    pu.active_epoch_no
-  from pool_update pu
-  where pu.active_epoch_no <= (select max(no) from epoch)
-  order by pu.hash_id, pu.active_epoch_no desc, pu.id desc
-),
-latest_offchain as (
-  select distinct on (opd.pool_id)
-    opd.pool_id,
-    opd.ticker_name,
-    opd.json
-  from off_chain_pool_data opd
-  order by opd.pool_id, opd.id desc
-),
-stake as (
-  select pool_id, sum(amount) as amount
-  from epoch_stake
-  where epoch_no = (select max(no) from epoch)
-  group by pool_id
-)
-select
-  ph.view as pool_id,
-  coalesce(opd.ticker_name, '') as ticker,
-  coalesce(opd.json->>'name', '') as name,
-  coalesce(st.amount, 0) as stake_lovelace,
-  (coalesce(st.amount, 0)::numeric / 1000000.0) as stake_ada,
-  coalesce(pr.dns_name, pr.dns_srv_name, '') as relay_hostname,
-  coalesce(pr.ipv4, pr.ipv6, '') as relay_ip,
-  coalesce((opd.json->'relays'->0->>'latitude')::text, '') as latitude,
-  coalesce((opd.json->'relays'->0->>'longitude')::text, '') as longitude,
-  coalesce((opd.json->'relays'->0->>'city')::text, '') as city,
-  coalesce((opd.json->'relays'->0->>'country')::text, '') as country
-from pool_hash ph
-join latest l on l.hash_id = ph.id
-left join pool_relay pr on pr.update_id = l.pool_update_id
-left join latest_offchain opd on opd.pool_id = ph.id
-left join stake st on st.pool_id = ph.id
-order by stake_lovelace desc;
-"""
+    # Cardano Visualisation API blocks some default user agents; set one explicitly.
+    raw = sh(['curl', '-sS', '-H', 'User-Agent: Mozilla/5.0', API_URL])
+    obj = json.loads(raw)
 
-    # Use psql \copy to write CSV on relay, stream to opsbox file.
-    # (docker exec writes to stdout, which we redirect to local OUT_PATH)
-    # Feed the \copy command via stdin to avoid shell quoting issues.
-    select_sql = ' '.join(sql.split()).strip().rstrip(';')
-    copy_cmd = f"\\copy ({select_sql}) TO STDOUT WITH (FORMAT csv, HEADER);"
-    cmd = [
-        'ssh', 'relay',
-        'docker', 'exec', '-i', 'dbsync-mainnet-postgres',
-        'psql', '-U', 'postgres', '-d', 'cexplorer',
-        '-v', 'ON_ERROR_STOP=1',
-        '-q',
-    ]
+    rows = []
+    for p in obj.get('data', []):
+        pool_id = p.get('id') or ''
+        ticker = ((p.get('parsedMetadata') or {}).get('ticker')) or ((p.get('metadata') or {}).get('ticker')) or ''
+        name = ((p.get('parsedMetadata') or {}).get('name')) or ((p.get('metadata') or {}).get('name')) or ''
 
-    out = run(cmd, input_text=copy_cmd + "\n")
+        # stake is nested
+        stake_lovelace = (((p.get('stake') or {}).get('ada') or {}).get('lovelace'))
+        try:
+            stake_lovelace = int(stake_lovelace) if stake_lovelace is not None else 0
+        except Exception:
+            stake_lovelace = 0
+        stake_ada = stake_lovelace / 1_000_000
+
+        for r in p.get('relays') or []:
+            if not isinstance(r, dict):
+                continue
+            relay_hostname = r.get('hostname') or ''
+            relay_ip = r.get('resolvedIp') or r.get('ipv4') or r.get('ipv6') or ''
+            lat = r.get('latitude') or ''
+            lon = r.get('longitude') or ''
+            city = r.get('geoCity') or ''
+            country = r.get('geoCountry') or ''
+
+            rows.append([
+                pool_id,
+                ticker,
+                name,
+                str(stake_lovelace),
+                f"{stake_ada:.6f}",
+                relay_hostname,
+                relay_ip,
+                str(lat),
+                str(lon),
+                city,
+                country,
+            ])
+
+    # Write CSV
     with open(OUT_PATH, 'w', encoding='utf-8', newline='') as f:
-        f.write(out)
+        w = csv.writer(f)
+        w.writerow(['pool_id', 'ticker', 'name', 'stake_lovelace', 'stake_ada', 'relay_hostname', 'relay_ip', 'latitude', 'longitude', 'city', 'country'])
+        w.writerows(rows)
 
-    print(f"Wrote {OUT_PATH} ({len(out)} bytes)")
+    print(f"Wrote {OUT_PATH} ({len(rows)} rows)")
 
 
 if __name__ == '__main__':
