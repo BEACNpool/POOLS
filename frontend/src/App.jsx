@@ -518,7 +518,7 @@ export default function App() {
                 const displayName = p.name || um?.name || '—'
                 const displayHomepage = p.homepage || um?.homepage || null
                 const displayDescription = p.description || um?.description || null
-                const isUnverified = !p.ticker && !p.name && !!um
+                const isUnverified = !!um
 
                 const marginPct = ((Number(p.margin) || 0) * 100).toFixed(1)
                 const satPct = (clamp01(p.saturation_ratio) * 100).toFixed(1)
@@ -682,8 +682,8 @@ export default function App() {
                             <b style={{ color: 'var(--text)' }}>Note:</b> This pool’s metadata was fetched directly from its metadata URL, but the SHA-256 hash does not match the on-chain registered hash.
                             {um?.expected_hash_hex ? (
                               <div style={{ marginTop: 8, fontSize: 12 }}>
-                                <div><span style={{ opacity: 0.8 }}>Expected:</span> <span style={{ fontFamily: 'ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace' }}>{um.expected_hash_hex}</span></div>
-                                <div><span style={{ opacity: 0.8 }}>Actual:</span> <span style={{ fontFamily: 'ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace' }}>{um.actual_hash_hex || '—'}</span></div>
+                                <div><span style={{ opacity: 0.8 }}>Expected:</span> <span style={{ fontFamily: 'ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace', wordBreak: 'break-all' }}>{um.expected_hash_hex}</span></div>
+                                <div><span style={{ opacity: 0.8 }}>Actual:</span> <span style={{ fontFamily: 'ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace', wordBreak: 'break-all' }}>{um.actual_hash_hex || '—'}</span></div>
                               </div>
                             ) : null}
                           </div>

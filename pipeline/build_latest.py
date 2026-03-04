@@ -197,8 +197,14 @@ def fetch_metadata_with_hash(p: dict) -> dict:
         v = meta.get(k)
         if isinstance(v, str):
             v = v.strip()
-        if v:
-            fields[k] = v
+        if not v:
+            continue
+        # Keep output bounded; avoid bloating latest.json.
+        if k == 'description':
+            v = v[:512]
+        else:
+            v = v[:128]
+        fields[k] = v
 
     return {
         'url': url,
@@ -309,37 +315,63 @@ left join pool_metadata_ref pmr on pmr.id = l.meta_id
         ]
         if candidates:
             # Prevent one bad host from stalling the whole run.
+            # Note: this is process-global; restore it afterward so SSH/psql calls aren't affected.
             socket.setdefaulttimeout(FETCH_TIMEOUT_SECS)
-            with ThreadPoolExecutor(max_workers=FETCH_MAX_WORKERS) as ex:
-                futs = {ex.submit(fetch_metadata_with_hash, p): p for p in candidates}
-                for fut in as_completed(futs):
-                    p = futs[fut]
-                    try:
-                        res = fut.result()
-                    except Exception:
-                        res = {}
-                    if not res:
-                        continue
 
-                    fields = res.get('fields') or {}
-                    if not fields:
-                        continue
+            stats = {
+                'candidates': len(candidates),
+                'verified_filled': 0,
+                'unverified_added': 0,
+                'failed': 0,
+            }
 
-                    if res.get('verified'):
-                        # Only fill missing fields; don't override db-sync data.
-                        for k, v in fields.items():
-                            if not p.get(k):
-                                p[k] = v
-                    else:
-                        # Hash mismatch: keep the data, but mark it as unverified.
-                        # This makes the UI usable while preserving the security signal.
-                        p.setdefault('unverified_metadata', {})
-                        um = p['unverified_metadata']
-                        um.setdefault('url', res.get('url'))
-                        um.setdefault('expected_hash_hex', res.get('expected_hash_hex'))
-                        um.setdefault('actual_hash_hex', res.get('actual_hash_hex'))
-                        for k, v in fields.items():
-                            um.setdefault(k, v)
+            try:
+                with ThreadPoolExecutor(max_workers=FETCH_MAX_WORKERS) as ex:
+                    futs = {ex.submit(fetch_metadata_with_hash, p): p for p in candidates}
+                    for fut in as_completed(futs):
+                        p = futs[fut]
+                        try:
+                            res = fut.result()
+                        except Exception:
+                            res = {}
+                        if not res:
+                            stats['failed'] += 1
+                            continue
+
+                        fields = res.get('fields') or {}
+                        if not fields:
+                            stats['failed'] += 1
+                            continue
+
+                        if res.get('verified'):
+                            filled_any = False
+                            # Only fill missing fields; don't override db-sync data.
+                            for k, v in fields.items():
+                                if not p.get(k):
+                                    p[k] = v
+                                    filled_any = True
+                            if filled_any:
+                                stats['verified_filled'] += 1
+                        else:
+                            # Hash mismatch: keep the data, but mark it as unverified.
+                            # This makes the UI usable while preserving the security signal.
+                            p.setdefault('unverified_metadata', {})
+                            um = p['unverified_metadata']
+                            um.setdefault('url', res.get('url'))
+                            um.setdefault('expected_hash_hex', res.get('expected_hash_hex'))
+                            um.setdefault('actual_hash_hex', res.get('actual_hash_hex'))
+                            for k, v in fields.items():
+                                um.setdefault(k, v)
+                            stats['unverified_added'] += 1
+            finally:
+                socket.setdefaulttimeout(None)
+
+            print(
+                f"Backfill metadata: candidates={stats['candidates']}, "
+                f"verified_filled={stats['verified_filled']}, "
+                f"unverified_added={stats['unverified_added']}, "
+                f"failed={stats['failed']}"
+            )
 
     # Owners (high confidence) — only from the latest active pool_update per pool
     owner_rows = psql(f"""
