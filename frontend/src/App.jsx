@@ -387,8 +387,8 @@ export default function App() {
                     onChange={e => setMarginMode(e.target.value)}
                     style={{ padding: '8px 10px', borderRadius: 12, border: '1px solid var(--border)', background: 'var(--panel2)', color: 'var(--text)' }}
                   >
-                    <option value="any">All margins</option>
-                    <option value="max">Max % margin</option>
+                    <option value="any">Any</option>
+                    <option value="max">Choose margin</option>
                   </select>
                 </div>
 
