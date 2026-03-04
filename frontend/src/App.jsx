@@ -215,8 +215,9 @@ export default function App() {
 
         if (!s) return true
         // Search across the most common things people paste (ticker/name/id) plus URLs.
-        // This helps when db-sync hasn't ingested off-chain metadata yet (ticker/name null).
-        return [p.ticker, p.name, p.pool_id_bech32, p.homepage, p.metadata_url]
+        // Also include unverified metadata (hash mismatch) so the UX still works.
+        const um = p.unverified_metadata || {}
+        return [p.ticker, p.name, p.pool_id_bech32, p.homepage, p.metadata_url, um.ticker, um.name, um.homepage]
           .some(v => (v || '').toLowerCase().includes(s))
       })
       .slice(0, 1200)
@@ -512,6 +513,13 @@ export default function App() {
               </div>
 
               {filtered.map(p => {
+                const um = p.unverified_metadata || null
+                const displayTicker = p.ticker || um?.ticker || '—'
+                const displayName = p.name || um?.name || '—'
+                const displayHomepage = p.homepage || um?.homepage || null
+                const displayDescription = p.description || um?.description || null
+                const isUnverified = !p.ticker && !p.name && !!um
+
                 const marginPct = ((Number(p.margin) || 0) * 100).toFixed(1)
                 const satPct = (clamp01(p.saturation_ratio) * 100).toFixed(1)
 
@@ -537,20 +545,21 @@ export default function App() {
                         background: selected === p.pool_id_bech32 ? 'rgba(83,82,237,0.10)' : 'transparent'
                       }}
                     >
-                      <div style={{ fontWeight: 900, letterSpacing: '0.02em' }}>{p.ticker || '—'}</div>
+                      <div style={{ fontWeight: 900, letterSpacing: '0.02em' }}>{displayTicker}</div>
 
                       <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
                         <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
-                          <span style={{ fontWeight: 750 }}>{p.name || '—'}</span>
+                          <span style={{ fontWeight: 750 }}>{displayName}</span>
+                          {isUnverified ? <Badge tone="warn">UNVERIFIED</Badge> : null}
                           {p.flags?.is_mpo ? <Badge tone="bad">MPO</Badge> : <Badge tone="good">SINGLE</Badge>}
                           {p.flags?.is_saturated ? <Badge tone="bad">SAT</Badge> : null}
                           {!p.flags?.is_saturated && p.flags?.is_near_saturated ? <Badge tone="warn">NEAR</Badge> : null}
                           {p.flags?.under_1_block_expected ? <Badge tone="neutral">VAR</Badge> : null}
                         </div>
                         <div style={{ fontSize: 12, color: 'var(--muted)', display: 'flex', gap: 10, flexWrap: 'wrap' }}>
-                          {p.homepage ? (
-                            <a href={p.homepage} target="_blank" rel="noreferrer" style={{ color: 'var(--link)', textDecoration: 'none' }}>
-                              {p.homepage.replace(/^https?:\/\//, '')}
+                          {displayHomepage ? (
+                            <a href={displayHomepage} target="_blank" rel="noreferrer" style={{ color: 'var(--link)', textDecoration: 'none' }}>
+                              {displayHomepage.replace(/^https?:\/\//, '')}
                             </a>
                           ) : (
                             <span style={{ opacity: 0.7 }}>No website listed</span>
@@ -646,8 +655,8 @@ export default function App() {
                                   <a href={links.poolpm} target="_blank" rel="noreferrer" style={{ color: 'var(--link)', textDecoration: 'none' }}>
                                     View on pool.pm →
                                   </a>
-                                  {p.homepage ? (
-                                    <a href={p.homepage} target="_blank" rel="noreferrer" style={{ color: 'var(--link)', textDecoration: 'none' }}>
+                                  {displayHomepage ? (
+                                    <a href={displayHomepage} target="_blank" rel="noreferrer" style={{ color: 'var(--link)', textDecoration: 'none' }}>
                                       Pool website →
                                     </a>
                                   ) : null}
@@ -662,9 +671,21 @@ export default function App() {
                           </div>
                         </div>
 
-                        {p.description ? (
+                        {displayDescription ? (
                           <div style={{ marginTop: 12, color: 'var(--muted)', lineHeight: 1.55 }}>
-                            <b style={{ color: 'var(--text)' }}>Description:</b> {p.description}
+                            <b style={{ color: 'var(--text)' }}>{isUnverified ? 'Description (unverified):' : 'Description:'}</b> {displayDescription}
+                          </div>
+                        ) : null}
+
+                        {isUnverified ? (
+                          <div style={{ marginTop: 10, color: 'var(--muted)', lineHeight: 1.55 }}>
+                            <b style={{ color: 'var(--text)' }}>Note:</b> This pool’s metadata was fetched directly from its metadata URL, but the SHA-256 hash does not match the on-chain registered hash.
+                            {um?.expected_hash_hex ? (
+                              <div style={{ marginTop: 8, fontSize: 12 }}>
+                                <div><span style={{ opacity: 0.8 }}>Expected:</span> <span style={{ fontFamily: 'ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace' }}>{um.expected_hash_hex}</span></div>
+                                <div><span style={{ opacity: 0.8 }}>Actual:</span> <span style={{ fontFamily: 'ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace' }}>{um.actual_hash_hex || '—'}</span></div>
+                              </div>
+                            ) : null}
                           </div>
                         ) : null}
                       </div>

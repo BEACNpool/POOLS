@@ -149,12 +149,17 @@ class Evidence:
     value: str
 
 
-def fetch_and_verify_metadata(p: dict) -> dict:
-    """Fetch pool metadata JSON and return fields to backfill.
+def fetch_metadata_with_hash(p: dict) -> dict:
+    """Fetch pool metadata JSON and compute its SHA-256.
 
-    Only returns data if:
-    - metadata_url exists
-    - metadata_hash_hex exists and matches sha256(body)
+    Returns a dict:
+      {
+        'url': <url>,
+        'expected_hash_hex': <on-chain hash>,
+        'actual_hash_hex': <fetched body hash>,
+        'verified': <bool>,
+        'fields': {ticker,name,homepage,description}
+      }
 
     Returns {} on any failure.
     """
@@ -181,22 +186,27 @@ def fetch_and_verify_metadata(p: dict) -> dict:
         return {}
 
     actual = hashlib.sha256(body).hexdigest().lower()
-    if actual != expected:
-        return {}
 
     try:
         meta = json.loads(body.decode('utf-8'))
     except Exception:
         return {}
 
-    out = {}
+    fields = {}
     for k in ('ticker', 'name', 'homepage', 'description'):
         v = meta.get(k)
         if isinstance(v, str):
             v = v.strip()
         if v:
-            out[k] = v
-    return out
+            fields[k] = v
+
+    return {
+        'url': url,
+        'expected_hash_hex': expected,
+        'actual_hash_hex': actual,
+        'verified': actual == expected,
+        'fields': fields,
+    }
 
 
 def main() -> int:
@@ -295,24 +305,41 @@ left join pool_metadata_ref pmr on pmr.id = l.meta_id
             p for p in pools
             if (not p.get('ticker') or not p.get('name'))
             and (p.get('metadata_url') and p.get('metadata_hash_hex'))
+            and not p.get('unverified_metadata')
         ]
         if candidates:
             # Prevent one bad host from stalling the whole run.
             socket.setdefaulttimeout(FETCH_TIMEOUT_SECS)
             with ThreadPoolExecutor(max_workers=FETCH_MAX_WORKERS) as ex:
-                futs = {ex.submit(fetch_and_verify_metadata, p): p for p in candidates}
+                futs = {ex.submit(fetch_metadata_with_hash, p): p for p in candidates}
                 for fut in as_completed(futs):
                     p = futs[fut]
                     try:
-                        patch = fut.result()
+                        res = fut.result()
                     except Exception:
-                        patch = {}
-                    if not patch:
+                        res = {}
+                    if not res:
                         continue
-                    # Only fill missing fields; don't override db-sync data.
-                    for k, v in patch.items():
-                        if not p.get(k):
-                            p[k] = v
+
+                    fields = res.get('fields') or {}
+                    if not fields:
+                        continue
+
+                    if res.get('verified'):
+                        # Only fill missing fields; don't override db-sync data.
+                        for k, v in fields.items():
+                            if not p.get(k):
+                                p[k] = v
+                    else:
+                        # Hash mismatch: keep the data, but mark it as unverified.
+                        # This makes the UI usable while preserving the security signal.
+                        p.setdefault('unverified_metadata', {})
+                        um = p['unverified_metadata']
+                        um.setdefault('url', res.get('url'))
+                        um.setdefault('expected_hash_hex', res.get('expected_hash_hex'))
+                        um.setdefault('actual_hash_hex', res.get('actual_hash_hex'))
+                        for k, v in fields.items():
+                            um.setdefault(k, v)
 
     # Owners (high confidence) — only from the latest active pool_update per pool
     owner_rows = psql(f"""
@@ -592,6 +619,7 @@ join pool_relay pr on pr.update_id = l.pool_update_id;
             'name': p.get('name'),
             'homepage': p.get('homepage'),
             'description': p.get('description'),
+            'unverified_metadata': p.get('unverified_metadata'),
             'active_stake_lovelace': stake,
             'pledge_lovelace': int(p.get('pledge_lovelace', 0) or 0),
             'margin': p.get('margin'),
