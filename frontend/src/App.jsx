@@ -214,7 +214,10 @@ export default function App() {
         if (minCost === '340' && Math.round(costAda) !== 340) return false
 
         if (!s) return true
-        return [p.ticker, p.name, p.pool_id_bech32].some(v => (v || '').toLowerCase().includes(s))
+        // Search across the most common things people paste (ticker/name/id) plus URLs.
+        // This helps when db-sync hasn't ingested off-chain metadata yet (ticker/name null).
+        return [p.ticker, p.name, p.pool_id_bech32, p.homepage, p.metadata_url]
+          .some(v => (v || '').toLowerCase().includes(s))
       })
       .slice(0, 1200)
   }, [pools, q, hideMpo, hideNearSat, hideTooSmall, marginMode, maxMargin, minCost])

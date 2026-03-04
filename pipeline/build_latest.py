@@ -15,11 +15,22 @@ from datetime import datetime, timezone
 from typing import Dict, List, Set, Tuple
 import csv
 import io
+import hashlib
+import socket
+import urllib.request
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from urllib.parse import urlparse
 
 
 REPO_ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), '..'))
 OUT_PATH = os.path.join(REPO_ROOT, 'frontend', 'public', 'data', 'latest.json')
+
+# Fallback metadata fetch (when db-sync off_chain_pool_data is missing).
+# Keep it conservative: small timeouts, limited concurrency, and verify the on-chain hash.
+FETCH_FALLBACK_ENABLED = os.environ.get('POOLS_FETCH_FALLBACK', '1') not in {'0', 'false', 'False'}
+FETCH_MAX_WORKERS = int(os.environ.get('POOLS_FETCH_WORKERS', '16'))
+FETCH_TIMEOUT_SECS = float(os.environ.get('POOLS_FETCH_TIMEOUT', '5'))
+FETCH_MAX_BYTES = int(os.environ.get('POOLS_FETCH_MAX_BYTES', str(256 * 1024)))
 
 
 def sh(cmd: List[str], *, check=True) -> str:
@@ -138,6 +149,56 @@ class Evidence:
     value: str
 
 
+def fetch_and_verify_metadata(p: dict) -> dict:
+    """Fetch pool metadata JSON and return fields to backfill.
+
+    Only returns data if:
+    - metadata_url exists
+    - metadata_hash_hex exists and matches sha256(body)
+
+    Returns {} on any failure.
+    """
+    url = (p.get('metadata_url') or '').strip()
+    expected = (p.get('metadata_hash_hex') or '').strip().lower()
+    if not url or not expected:
+        return {}
+
+    try:
+        req = urllib.request.Request(
+            url,
+            headers={
+                # Some hosts behave badly without a UA.
+                'User-Agent': 'BEACNpool-POOLS/1.0 (+https://beacnpool.github.io/POOLS/)'
+            },
+            method='GET',
+        )
+        with urllib.request.urlopen(req, timeout=FETCH_TIMEOUT_SECS) as resp:
+            body = resp.read(FETCH_MAX_BYTES + 1)
+    except Exception:
+        return {}
+
+    if len(body) > FETCH_MAX_BYTES:
+        return {}
+
+    actual = hashlib.sha256(body).hexdigest().lower()
+    if actual != expected:
+        return {}
+
+    try:
+        meta = json.loads(body.decode('utf-8'))
+    except Exception:
+        return {}
+
+    out = {}
+    for k in ('ticker', 'name', 'homepage', 'description'):
+        v = meta.get(k)
+        if isinstance(v, str):
+            v = v.strip()
+        if v:
+            out[k] = v
+    return out
+
+
 def main() -> int:
     now = datetime.now(timezone.utc).isoformat(timespec='seconds')
 
@@ -226,6 +287,32 @@ left join pool_metadata_ref pmr on pmr.id = l.meta_id
         pools.append(pool)
         pool_ids.append(pool_id_bech32)
         pool_by_hash[pool_hash_id] = pool
+
+    # Backfill metadata when db-sync didn't ingest off-chain pool data.
+    # This fixes search/UX for pools that have a valid on-chain metadata ref but missing off_chain_pool_data.
+    if FETCH_FALLBACK_ENABLED:
+        candidates = [
+            p for p in pools
+            if (not p.get('ticker') or not p.get('name'))
+            and (p.get('metadata_url') and p.get('metadata_hash_hex'))
+        ]
+        if candidates:
+            # Prevent one bad host from stalling the whole run.
+            socket.setdefaulttimeout(FETCH_TIMEOUT_SECS)
+            with ThreadPoolExecutor(max_workers=FETCH_MAX_WORKERS) as ex:
+                futs = {ex.submit(fetch_and_verify_metadata, p): p for p in candidates}
+                for fut in as_completed(futs):
+                    p = futs[fut]
+                    try:
+                        patch = fut.result()
+                    except Exception:
+                        patch = {}
+                    if not patch:
+                        continue
+                    # Only fill missing fields; don't override db-sync data.
+                    for k, v in patch.items():
+                        if not p.get(k):
+                            p[k] = v
 
     # Owners (high confidence) — only from the latest active pool_update per pool
     owner_rows = psql(f"""
